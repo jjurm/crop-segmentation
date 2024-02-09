@@ -1,0 +1,34 @@
+apiVersion: run.ai/v2alpha1
+kind: InteractiveWorkload
+metadata:
+  name: jupyter
+  namespace: runai-studentmichele-juraj
+spec:
+  gpu:
+    value: "0.1"
+  image:
+    value: jjurm/notebook-tools
+  imagePullPolicy:
+    value: Always
+  exposedUrls:
+    items:
+      exposed-url-0:
+        value:
+          containerPort: 8888
+          customUrl: false
+          url: ""
+  ports:
+    items:
+      port-8888:
+        value:
+          autoGenerate: false
+          container: 8888
+          external: 8888
+  name:
+    value: jupyter
+  nodeType:
+    value: A100
+  username:
+    value: jmicko@student.ethz.ch
+  workingDir:
+    value: /mydata/studentmichele/juraj
