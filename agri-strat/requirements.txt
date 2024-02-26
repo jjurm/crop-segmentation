@@ -1,0 +1,17 @@
+torch
+matplotlib
+netCDF4
+numpy
+pandas
+pycocotools
+lightning
+scikit-learn
+scikit-multilearn
+seaborn
+tensorboard
+torchmetrics
+torchvision
+tqdm
+xarray
+wandb
+dataclasses-json
