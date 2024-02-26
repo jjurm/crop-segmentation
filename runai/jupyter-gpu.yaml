@@ -1,19 +1,19 @@
 apiVersion: run.ai/v2alpha1
 kind: InteractiveWorkload
 metadata:
-  name: &name jupyter
+  name: &name jupyter-gpu
   namespace: runai-studentmichele-juraj
 spec:
   cpu:
-    value: "1"
+    value: "16"
   gpu:
-    value: "0.2"
+    value: "1"
+  preemptible:
+    value: true
   largeShm:
     value: true
   image:
     value: jjurm/notebook-tools
-#  imagePullPolicy:
-#    value: Always
   exposedUrls:
     items:
       exposed-url-0:
