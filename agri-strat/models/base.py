@@ -17,7 +17,7 @@ from models.convstar import ConvSTAR
 from models.unet import UNet
 
 
-def get_model_class(self, model_name):
+def get_model_class(model_name):
     if model_name == "unet":
         model_class = UNet
     elif model_name == "convstar":
@@ -88,8 +88,8 @@ class BaseModelModule(pl.LightningModule, ABC):
         model_class = get_model_class(model_name)
         self.model = model_class(num_discrete_labels=num_discrete_labels, **kwargs)
 
-        self.epoch_train_losses: list = None
-        self.epoch_valid_losses: list = None
+        self.epoch_train_losses: list | None = None
+        self.epoch_valid_losses: list | None = None
 
     @abstractmethod
     def get_lr_scheduler(self, optimizer):
@@ -98,7 +98,7 @@ class BaseModelModule(pl.LightningModule, ABC):
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
 
-        lr_scheduler: LRScheduler = None
+        lr_scheduler: LRScheduler
         if self.hparams.get("model_name") == "unet":
             lr_scheduler = ReduceLROnPlateau(
                 optimizer,
@@ -112,6 +112,8 @@ class BaseModelModule(pl.LightningModule, ABC):
                 step_size=30,
                 gamma=0.1
             )
+        else:
+            raise ValueError(f"model = {self.hparams.get('model_name')}, expected: 'unet' or 'convstar'")
 
         return [optimizer], [{
             'scheduler': lr_scheduler,

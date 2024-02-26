@@ -31,7 +31,7 @@ class MediansDataModule(pl.LightningDataModule):
             'pin_memory': True,
         }
 
-        self.metadata: MediansMetadata = None
+        self.metadata: MediansMetadata | None = None
         self.dataset_train = None
         self.dataset_val = None
         self.dataset_test = None
