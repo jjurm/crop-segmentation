@@ -44,8 +44,8 @@ class MediansDataset(Dataset):
         medians = medians_raw[self.bins_range[0] - 1:self.bins_range[1]].astype(MEDIANS_DTYPE)
 
         # Read labels
-        labels = np.load(get_medians_subpatch_path(patch_dir, subpatch_id, num_subpatches, labels=True)) \
-            .astype(LABEL_DTYPE)
+        labels = np.load(get_medians_subpatch_path(patch_dir, subpatch_id, num_subpatches, labels=True))
+        # shape: (height, width)
 
         return medians, labels
 
@@ -73,7 +73,7 @@ class MediansDataset(Dataset):
 
         return {
             'medians': medians,
-            'labels': labels_mapped.astype(LABEL_DTYPE),
+            'labels': labels_mapped.astype(np.int64),
             'parcels': (labels != 0),
             'idx': idx
         }

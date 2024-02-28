@@ -15,3 +15,6 @@ tqdm
 xarray
 wandb
 dataclasses-json
+rich
+typing_extensions
+packaging

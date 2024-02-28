@@ -3,6 +3,9 @@
 __author__ = "Juraj Micko"
 __license__ = "MIT License"
 
+if __name__ == '__main__':
+    print("Importing modules...")
+
 import argparse
 from pathlib import Path
 
@@ -14,6 +17,7 @@ from lightning.pytorch.loggers import WandbLogger
 import config as experiment_config
 import wandb
 from models.base import BaseModelModule
+from utils.custom_progress_bar import CustomProgressBar
 from utils.medians_datamodule import MediansDataModule
 
 
@@ -44,7 +48,7 @@ def parse_arguments():
                         help='Use a weighted loss function with precalculated weights per class. Default False.')
 
     parser.add_argument('--saved_medians_path', type=str, default='logs/medians', required=False,
-                        help='Path to load exported medians from. Default "logs/medians/".')
+                        help='Path to load exported medians from. Default "logs/medians".')
     parser.add_argument('--bins_range', type=int, nargs=2, default=[4, 9], required=True,
                         help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). Default: [4, 9].')
 
@@ -81,10 +85,11 @@ def get_config(args):
         'bins_range': args.bins_range,
 
         'parcel_loss': args.parcel_loss,
+        'monitor_metric': 'val/f1w_parcel' if args.parcel_loss else 'val/f1w',
         'weighted_loss': args.weighted_loss,
         'batch_size': args.batch_size,
         'num_epochs': args.num_epochs,
-        'lr': args.lr,
+        'learning_rate': args.lr,
         'requires_norm': args.requires_norm,
         'deterministic': args.deterministic,
 
@@ -111,14 +116,15 @@ def create_datamodule(config):
 
 def create_model(config, datamodule):
     return BaseModelModule(
-        model_name=config["model"],
+        model=config["model"],
         linear_encoder=experiment_config.LINEAR_ENCODER,
         parcel_loss=config["parcel_loss"],
+        monitor_metric=config["monitor_metric"],
         class_weights=experiment_config.CLASS_WEIGHTS,
         num_layers=3,
         num_bands=len(datamodule.metadata.bands),
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
-        learning_rate=config["lr"],
+        learning_rate=config["learning_rate"],
     )
 
 
@@ -128,6 +134,7 @@ def main():
 
     torch.set_float32_matmul_precision('medium')
 
+    print("Intializing wandb run...")
     with wandb.init(
             project="agri-strat",
             job_type=args.job_type,
@@ -136,6 +143,7 @@ def main():
             resume="auto",
             config=config,
     ) as run:
+        print("Creating datamodule, model, trainer...")
         datamodule = create_datamodule(config)
         model = create_model(config, datamodule)
 
@@ -143,13 +151,14 @@ def main():
             LearningRateMonitor(),
             ModelCheckpoint(
                 dirpath=Path(wandb.run.dir) / "checkpoints",
-                monitor='val_loss',
-                mode='min',
+                filename='ckpt_epoch={epoch:02d}',
+                monitor=config["monitor_metric"],
                 save_last='link',
                 save_top_k=-1,
-                filename='ckpt_epoch={epoch:02d}_step={step}_val_loss={val_loss:.2f}',
-                auto_insert_metric_name=True,
-            )
+                mode='min',
+                auto_insert_metric_name=False,
+            ),
+            CustomProgressBar(),
         ]
         trainer = pl.Trainer(
             accelerator="auto",
@@ -166,9 +175,10 @@ def main():
             limit_train_batches=config["limit_train_batches"],
             limit_val_batches=config["limit_val_batches"],
             num_sanity_val_steps=2,
-            profiler='simple',
+            # profiler='simple',
         )
 
+        print("Training...")
         trainer.fit(model, datamodule=datamodule)
 
 

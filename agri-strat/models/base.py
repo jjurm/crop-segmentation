@@ -1,5 +1,4 @@
 import pickle
-from abc import ABC, abstractmethod
 from pathlib import Path
 
 import lightning.pytorch as pl
@@ -12,27 +11,30 @@ import torch.optim as optim
 import wandb
 from matplotlib.patches import Rectangle
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, LRScheduler
+from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, MulticlassConfusionMatrix
 
+from config import SELECTED_CLASSES
 from models.convstar import ConvSTAR
 from models.unet import UNet
 
 
-def get_model_class(model_name):
-    if model_name == "unet":
+def get_model_class(model):
+    if model == "unet":
         model_class = UNet
-    elif model_name == "convstar":
+    elif model == "convstar":
         model_class = ConvSTAR
     else:
-        raise ValueError(f"model = {model_name}, expected: 'unet' or 'convstar'")
+        raise ValueError(f"model = {model}, expected: 'unet' or 'convstar'")
     return model_class
 
 
-class BaseModelModule(pl.LightningModule, ABC):
+class BaseModelModule(pl.LightningModule):
     def __init__(
             self,
-            model_name: str,
+            model: str,
             linear_encoder,
             learning_rate,
+            monitor_metric: str,
             parcel_loss=False,
             class_weights=None,
             crop_encoding=None,
@@ -59,11 +61,9 @@ class BaseModelModule(pl.LightningModule, ABC):
             A dictionary mapping class ids to class names.
         checkpoint_epoch: int, default None
             The epoch loaded for testing.
-        num_layers: int, default 3
-            The number of layers to use in each path.
         """
         super(BaseModelModule, self).__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["class_weights", "linear_encoder", "num_bands", "num_time_steps"])
 
         self.linear_encoder = linear_encoder
         self.learning_rate = learning_rate
@@ -71,162 +71,111 @@ class BaseModelModule(pl.LightningModule, ABC):
         self.crop_encoding = crop_encoding
         self.checkpoint_epoch = checkpoint_epoch
 
-        num_discrete_labels = len(set(linear_encoder.values()))
-        self.confusion_matrix = torch.zeros([num_discrete_labels, num_discrete_labels])
+        num_classes = len(set(linear_encoder.values()))
+        # self.confusion_matrix = torch.zeros([num_classes, num_classes])
 
         # Loss function
         class_weights = torch.tensor(
             [class_weights[k] for k in sorted(class_weights.keys())]).cuda() if class_weights is not None else None
-        self.lossfunction = nn.NLLLoss(
-            ignore_index=0,
-            reduction='sum' if self.parcel_loss else 'mean',
-            weight=class_weights,
-        )
+
+        self.loss_nll = nn.NLLLoss(weight=class_weights)
+        self.loss_nll_parcel = nn.NLLLoss(weight=class_weights, ignore_index=0)
+        self.metric_acc = MulticlassAccuracy(num_classes=num_classes, average="macro")
+        self.metric_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="macro", ignore_index=0)
+        self.metric_f1w = MulticlassF1Score(num_classes=num_classes, average="weighted")
+        self.metric_f1w_parcel = MulticlassF1Score(num_classes=num_classes, average="weighted", ignore_index=0)
+        self.confusion_matrix = MulticlassConfusionMatrix(num_classes=num_classes, normalize="none")
 
         self.run_dir = Path(wandb.run.dir)
 
-        model_class = get_model_class(model_name)
-        self.model = model_class(num_discrete_labels=num_discrete_labels, **kwargs)
-
-        self.epoch_train_losses: list | None = None
-        self.epoch_valid_losses: list | None = None
-
-    @abstractmethod
-    def get_lr_scheduler(self, optimizer):
-        pass
+        self.model = get_model_class(model)(num_classes=num_classes, **kwargs)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
 
         lr_scheduler: LRScheduler
-        if self.hparams.get("model_name") == "unet":
+        if self.hparams.get("model") == "unet":
             lr_scheduler = ReduceLROnPlateau(
                 optimizer,
                 factor=0.5,
                 patience=4,
-                verbose=True
             )
-        elif self.hparams.get("model_name") == "convstar":
+        elif self.hparams.get("model") == "convstar":
             lr_scheduler = StepLR(
                 optimizer,
                 step_size=30,
                 gamma=0.1
             )
         else:
-            raise ValueError(f"model = {self.hparams.get('model_name')}, expected: 'unet' or 'convstar'")
+            raise ValueError(f"model = {self.hparams.get('model')}, expected: 'unet' or 'convstar'")
 
         return [optimizer], [{
             'scheduler': lr_scheduler,
-            'monitor': 'val_loss'
+            'monitor': self.hparams.get("monitor_metric"),
         }]
 
-    def loss(self, batch):
-        inputs = batch['medians']
-        label = batch['labels'].to(torch.long)  # (B, H, W)
+    def training_step(self, batch, batch_idx):
+        inputs, labels = batch['medians'], batch['labels']  # (B, K, H, W), (B, H, W)
+        output = self.model(inputs)
+        loss_nll = self.loss_nll(output, labels)
+        loss_nll_parcel = self.loss_nll_parcel(output, labels)
+        self.log('train/loss_nll', loss_nll,
+                 on_step=True, on_epoch=True, logger=True, prog_bar=not self.parcel_loss)
+        self.log('train/loss_nll_parcel', loss_nll_parcel,
+                 on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss)
 
-        pred = self.model(inputs)  # (B, K, H, W)
-
-        if self.parcel_loss:
-            parcels = batch['parcels']  # (B, H, W)
-            parcels_K = parcels[:, None, :, :].repeat(1, pred.size(1), 1, 1)  # (B, K, H, W)
-
-            # Note: a new masked array must be created in order to avoid inplace
-            # operations on the label/pred variables. Otherwise the optimizer
-            # will throw an error because it requires the variables to be unchanged
-            # for gradient computation
-
-            mask = (parcels) & (label != 0)
-            mask_K = (parcels_K) & (label[:, None, :, :].repeat(1, pred.size(1), 1, 1) != 0)
-
-            label_masked = label.clone()
-            label_masked[~mask] = 0
-
-            pred_masked = pred.clone()
-            pred_masked[~mask_K] = 0
-
-            label = label_masked.clone()
-            pred = pred_masked.clone()
-
-            loss = self.lossfunction(pred, label)
-
-            loss = loss / parcels.sum()
-        else:
-            loss = self.lossfunction(pred, label)
-
+        loss = loss_nll_parcel if self.parcel_loss else loss_nll
         return loss
 
-    def training_step(self, batch, batch_idx):
-        loss = self.loss(batch)
-        self.epoch_train_losses.append(loss.item() * batch['medians'].shape[0])
-        return {'loss': loss}
-
     def validation_step(self, batch, batch_idx):
-        loss = self.loss(batch)
-        self.epoch_valid_losses.append(loss.item() * batch['medians'].shape[0])
-        return {'val_loss': loss}
+        inputs, labels = batch['medians'], batch['labels']  # (B, K, H, W), (B, H, W)
+        output = self.model(inputs)
+        loss_nll = self.loss_nll(output, labels)
+        loss_nll_parcel = self.loss_nll_parcel(output, labels)
+        self.log('val/loss_nll', loss_nll,
+                 on_step=False, on_epoch=True, logger=True, prog_bar=not self.parcel_loss)
+        self.log('val/loss_nll_parcel', loss_nll_parcel,
+                 on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss)
 
-    def test_step(self, batch, batch_idx):
-        inputs = batch['medians']
-        label = batch['labels'].to(torch.long)  # (B, H, W)
-
-        pred = self.model(inputs).to(torch.long)  # (B, K, H, W)
-
-        # Reverse the logarithm of the LogSoftmax activation
-        pred = torch.exp(pred)
-
-        # Clip predictions larger than the maximum possible label
-        pred = torch.clamp(pred, 0, max(self.linear_encoder.values()))
-
-        if self.parcel_loss:
-            parcels = batch['parcels']  # (B, H, W)
-            parcels_K = parcels[:, None, :, :].repeat(1, pred.size(1), 1, 1)  # (B, K, H, W)
-
-            mask = (parcels) & (label != 0)
-            mask_K = (parcels_K) & (label[:, None, :, :].repeat(1, pred.size(1), 1, 1) != 0)
-            label[~mask] = 0
-            pred[~mask_K] = 0
-
-            pred_sparse = pred.argmax(axis=1)
-
-            label = label.flatten()
-            pred = pred_sparse.flatten()
-
-            # Discretize predictions
-            # bins = np.arange(-0.5, sorted(list(self.linear_encoder.values()))[-1] + 0.5, 1)
-            # bins_idx = torch.bucketize(pred, torch.tensor(bins).cuda())
-            # pred_disc = bins_idx - 1
-
-        for i in range(label.shape[0]):
-            self.confusion_matrix[label[i], pred[i]] += 1
-
-        return
-
-    def on_train_epoch_start(self) -> None:
-        self.epoch_train_losses = []
-
-    def on_train_epoch_end(self) -> None:
-        # Calculate average loss over an epoch
-        train_loss = np.nanmean(self.epoch_train_losses)
-
-        with open(self.run_dir / "avg_train_losses.txt", 'a') as f:
-            f.write(f'{self.current_epoch}: {train_loss}\n')
-
-        with open(self.run_dir / 'lrs.txt', 'a') as f:
-            f.write(f'{self.current_epoch}: {self.learning_rate}\n')
-
-        self.log('train_loss', train_loss, prog_bar=True)
-
-    def on_validation_epoch_start(self) -> None:
-        self.epoch_valid_losses = []
+        acc = self.metric_acc(output, labels)
+        f1w = self.metric_f1w(output, labels)
+        acc_parcel = self.metric_acc_parcel(output, labels)
+        f1w_parcel = self.metric_f1w_parcel(output, labels)
+        self.confusion_matrix.update(output, labels)
+        self.log_dict({
+            'val/acc': acc,
+            'val/f1w': f1w,
+        }, on_step=False, on_epoch=True, logger=True, prog_bar=not self.parcel_loss)
+        self.log_dict({
+            'val/acc_parcel': acc_parcel,
+            'val/f1w_parcel': f1w_parcel
+        }, on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss)
 
     def on_validation_epoch_end(self) -> None:
-        # Calculate average loss over an epoch
-        valid_loss = np.nanmean(self.epoch_valid_losses)
+        confusion_matrix = self.confusion_matrix.compute()
+        wandb_cm = self._get_wandb_confusion_matrix(confusion_matrix)
+        if self.trainer.state.stage != "sanity_check":
+            wandb.log({"confusion_matrix": wandb_cm, "epoch": self.current_epoch})
 
-        with open(self.run_dir / "avg_val_losses.txt", 'a') as f:
-            f.write(f'{self.current_epoch}: {valid_loss}\n')
+    def _get_wandb_confusion_matrix(self, confusion_matrix):
+        class_names = ["0"] + [name for _, name in SELECTED_CLASSES]
 
-        self.log('val_loss', valid_loss, prog_bar=True)
+        data = []
+        for i in range(self.confusion_matrix.num_classes):
+            for j in range(self.confusion_matrix.num_classes):
+                data.append([class_names[i], class_names[j], confusion_matrix[i, j]])
+
+        fields = {
+            "Actual": "Actual",
+            "Predicted": "Predicted",
+            "nPredictions": "nPredictions",
+        }
+        return wandb.plot_table(
+            "wandb/confusion_matrix/v1",
+            wandb.Table(columns=["Actual", "Predicted", "nPredictions"], data=data),
+            fields,
+            {"title": f"Confusion Matrix"},
+        )
 
     def on_test_epoch_end(self):
         self.confusion_matrix = self.confusion_matrix.cpu().detach().numpy()

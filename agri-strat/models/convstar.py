@@ -55,7 +55,7 @@ class ConvSTARCell(nn.Module):
 
 
 class ConvSTAR(nn.Module):
-    def __init__(self, num_discrete_labels, input_size=4, hidden_sizes=64, kernel_sizes=3, n_layers=3):
+    def __init__(self, num_classes, input_size=4, hidden_sizes=64, kernel_sizes=3, n_layers=3):
         """
         Parameters:
         -----------
@@ -101,7 +101,7 @@ class ConvSTAR(nn.Module):
 
         self.conv2d = nn.Conv2d(
             in_channels=self.hidden_sizes[-1],
-            out_channels=num_discrete_labels,
+            out_channels=num_classes,
             kernel_size=1,
             stride=1,
             padding=0

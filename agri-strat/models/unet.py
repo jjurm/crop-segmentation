@@ -78,7 +78,7 @@ class Up(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, num_discrete_labels, num_bands, num_time_steps, num_layers=3):
+    def __init__(self, num_classes, num_bands, num_time_steps, num_layers=3):
         """
         Parameters:
         -----------
@@ -108,7 +108,7 @@ class UNet(nn.Module):
             layers.append(Up(feats, feats // 2, False))
             feats //= 2
 
-        layers.append(nn.Conv2d(feats, num_discrete_labels, kernel_size=1))
+        layers.append(nn.Conv2d(feats, num_classes, kernel_size=1))
         layers.append(nn.LogSoftmax(dim=1))
 
         self.layers = nn.ModuleList(layers)
