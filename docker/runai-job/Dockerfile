@@ -32,6 +32,7 @@ RUN apt-get install --yes --no-install-recommends \
     nano-tiny \
     unzip \
     vim-tiny \
+    openssh-server \
     openssh-client \
     less \
     && apt-get clean && rm -rf /var/lib/apt/lists/* && \
@@ -58,8 +59,12 @@ RUN sed -i.bak -e 's/^%sudo/#%sudo/' /etc/sudoers && \
     adduser "${NB_USER}" sudo && \
     echo "${NB_USER}:${NB_PASSWORD}" | chpasswd
 
+# Expose Jupyter port
+ENV JUPYTER_PORT=8888
+EXPOSE $JUPYTER_PORT
 
 USER $NB_USER
 
 WORKDIR "$HOME"
 ENTRYPOINT ["tini", "-g", "--"]
+CMD ["/bin/bash"]
