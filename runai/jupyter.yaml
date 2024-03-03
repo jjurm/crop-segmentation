@@ -11,7 +11,7 @@ spec:
   largeShm:
     value: true
   image:
-    value: jjurm/runai-python-interactive
+    value: jjurm/runai-interactive
 #  imagePullPolicy:
 #    value: Always
   exposedUrls:

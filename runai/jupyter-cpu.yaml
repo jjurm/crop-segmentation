@@ -9,7 +9,7 @@ spec:
   preemptible:
     value: true
   image:
-    value: jjurm/notebook-tools
+    value: jjurm/runai-interactive
   exposedUrls:
     items:
       exposed-url-0:
