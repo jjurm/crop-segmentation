@@ -47,8 +47,12 @@ def parse_arguments():
     parser.add_argument('--weighted_loss', action='store_true', default=False, required=False,
                         help='Use a weighted loss function with precalculated weights per class. Default False.')
 
-    parser.add_argument('--saved_medians_path', type=str, default='logs/medians', required=False,
-                        help='Path to load exported medians from. Default "logs/medians".')
+    parser.add_argument('--train_medians_artifact', type=str, default='logs/medians', required=False,
+                        help='Wandb artifact of type \'medians\' that references precomputed medians for training.')
+    parser.add_argument('--val_medians_artifact', type=str, default='logs/medians', required=False,
+                        help='Wandb artifact of type \'medians\' that references precomputed medians for validation.')
+    parser.add_argument('--test_medians_artifact', type=str, default='logs/medians', required=False,
+                        help='Wandb artifact of type \'medians\' that references precomputed medians for test.')
     parser.add_argument('--bins_range', type=int, nargs=2, default=[4, 9], required=True,
                         help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). Default: [4, 9].')
 
@@ -81,7 +85,11 @@ def get_config(args):
         'limit_val_batches': args.limit_batches[1] if args.limit_batches and len(args.limit_batches) >= 2 and
                                                       args.limit_batches[1] > 0 else None,
 
-        'saved_medians_path': args.saved_medians_path,
+        'medians_artifacts': {
+            'train': args.train_medians_artifact,
+            'val': args.val_medians_artifact,
+            'test': args.test_medians_artifact,
+        },
         'bins_range': args.bins_range,
 
         'parcel_loss': args.parcel_loss,
@@ -102,7 +110,7 @@ def get_config(args):
 
 def create_datamodule(config):
     datamodule = MediansDataModule(
-        saved_medians_path=Path(config["saved_medians_path"]),
+        medians_artifacts=config["medians_artifacts"],
         bins_range=config["bins_range"],
         linear_encoder=experiment_config.LINEAR_ENCODER,
         requires_norm=config["requires_norm"],
@@ -122,7 +130,7 @@ def create_model(config, datamodule):
         monitor_metric=config["monitor_metric"],
         class_weights=experiment_config.CLASS_WEIGHTS,
         num_layers=3,
-        num_bands=len(datamodule.metadata.bands),
+        num_bands=datamodule.get_num_bands(),
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
         learning_rate=config["learning_rate"],
     )

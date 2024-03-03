@@ -11,7 +11,7 @@ from utils.medians_metadata import MediansMetadata
 class MediansDataModule(pl.LightningDataModule):
     def __init__(
             self,
-            saved_medians_path: Path,
+            medians_artifacts: dict[str, str],
             bins_range: tuple[int, int],
             linear_encoder: dict,
             requires_norm: bool,
@@ -20,7 +20,7 @@ class MediansDataModule(pl.LightningDataModule):
     ):
         super().__init__()
 
-        self.saved_medians_path = saved_medians_path
+        self.medians_artifacts = medians_artifacts
         self.bins_range = bins_range
         self.linear_encoder = linear_encoder
         self.requires_norm = requires_norm
@@ -31,32 +31,28 @@ class MediansDataModule(pl.LightningDataModule):
             'pin_memory': True,
         }
 
-        self.metadata: MediansMetadata | None = None
-        self.dataset_train = None
-        self.dataset_val = None
-        self.dataset_test = None
+        self.dataset_train: MediansDataset | None = None
+        self.dataset_val: MediansDataset | None = None
+        self.dataset_test: MediansDataset | None = None
 
     def prepare_data(self):
         pass
 
     def setup(self, stage: str = 'fit'):
-        # load mendians' metadata
-        with open(self.saved_medians_path / utils.medians_metadata.FILENAME, 'r') as f:
-            self.metadata = MediansMetadata.from_json(f.read())
-
         common_config = {
-            'saved_medians_path': self.saved_medians_path,
             'bins_range': self.bins_range,
             'linear_encoder': self.linear_encoder,
-            'metadata': self.metadata,
             'requires_norm': self.requires_norm,
         }
 
         if stage == 'fit':
-            self.dataset_train = MediansDataset(split='train', **common_config)
-            self.dataset_val = MediansDataset(split='val', **common_config)
+            assert "train" in self.medians_artifacts and "val" in self.medians_artifacts, \
+                "Both --train_medians_artifact and --val_medians_artifact are required for fitting."
+            self.dataset_train = MediansDataset(medians_artifact=self.medians_artifacts["train"], **common_config)
+            self.dataset_val = MediansDataset(medians_artifact=self.medians_artifacts["val"], **common_config)
         elif stage == 'test':
-            self.dataset_test = MediansDataset(split='test', **common_config)
+            assert "test" in self.medians_artifacts, "--test_medians_artifact is required for testing."
+            self.dataset_test = MediansDataset(medians_artifact=self.medians_artifacts["test"], **common_config)
         else:
             raise ValueError(f"stage = {stage}, expected: 'fit' or 'test'")
 
@@ -68,3 +64,11 @@ class MediansDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
         return DataLoader(self.dataset_test, shuffle=False, **self.dataloader_args)
+
+    def get_num_bands(self):
+        """
+        Returns number of bands that the model should be created for.
+        """
+        assert self.dataset_train is not None or self.dataset_test is not None, "No dataset loaded."
+        dataset = self.dataset_train if self.dataset_train is not None else self.dataset_test
+        return len(dataset.metadata.bands)

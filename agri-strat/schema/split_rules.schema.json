@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "rules": {
+      "$ref": "#/definitions/rules"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "rules"
+  ],
+  "definitions": {
+    "filteredValue": {
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "filter": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/filteredValue"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/filteredValue"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "min": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            },
+            "in": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/filteredValue"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "minProperties": 1
+        }
+      ]
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "$ref": "#/definitions/filter"
+          },
+          "tile": {
+            "$ref": "#/definitions/filter"
+          },
+          "patch_x": {
+            "$ref": "#/definitions/filter"
+          },
+          "patch_y": {
+            "$ref": "#/definitions/filter"
+          },
+          "path": {
+            "$ref": "#/definitions/filter"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "target": {
+                      "type": "string"
+                    },
+                    "split": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "target"
+                  ]
+                }
+              }
+            ]
+          },
+          "rules": {
+            "$ref": "#/definitions/rules"
+          },
+          "assert_none": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "target"
+            ]
+          },
+          {
+            "required": [
+              "rules"
+            ]
+          },
+          {
+            "required": [
+              "assert_none"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

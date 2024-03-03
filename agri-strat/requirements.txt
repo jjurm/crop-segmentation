@@ -18,3 +18,5 @@ dataclasses-json
 rich
 typing_extensions
 packaging
+pyyaml
+pyarrow
