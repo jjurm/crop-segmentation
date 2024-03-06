@@ -74,6 +74,8 @@ def parse_arguments():
 
     parser.add_argument('--num_workers', type=int, default=6, required=False,
                         help='Number of workers to work on dataloader. Default 6')
+    parser.add_argument('--cache_dataset', action='store_true', default=False, required=False,
+                        help='Cache the dataset in memory during the first epoch. Default False.')
     parser.add_argument('--num_gpus', type=int, default=1, required=False,
                         help='Number of gpus to use (per node). Default 1')
     parser.add_argument('--num_nodes', type=int, default=1, required=False,
@@ -107,6 +109,7 @@ def get_config(args):
         'deterministic': args.deterministic,
 
         'num_workers': args.num_workers,
+        'cache_dataset': args.cache_dataset,
         'num_gpus': args.num_gpus,
         'num_nodes': args.num_nodes,
         'node_name': os.environ.get('NODE_NAME', None),

@@ -19,7 +19,7 @@ class MediansDataset(Dataset):
             medians_artifact: str,
             bins_range: tuple[int, int],
             linear_encoder: dict,
-            requires_norm: bool = True,
+            requires_norm: bool,
     ) -> None:
         # number of total patches is given by number of patches in coco
         self.requires_norm = requires_norm
@@ -57,6 +57,12 @@ class MediansDataset(Dataset):
 
         return medians, labels
 
+    def get_medians_shape(self):
+        return self.bins_range[1] - self.bins_range[0] + 1, len(self.metadata.bands), *self.metadata.img_size
+
+    def get_labels_shape(self):
+        return *self.metadata.img_size,
+
     def __getitem__(self, idx: int) -> dict:
         # The data item index (`idx`) corresponds to a single sequence.
         # In order to fetch the correct sequence, we must determine exactly which
@@ -82,8 +88,8 @@ class MediansDataset(Dataset):
         return {
             'medians': medians,
             'labels': labels_mapped.astype(np.int64),
-            'parcels': (labels != 0),
-            'idx': idx
+            #'parcels': (labels != 0),
+            #'idx': idx
         }
 
     def __len__(self):

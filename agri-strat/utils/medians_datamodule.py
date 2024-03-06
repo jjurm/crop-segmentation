@@ -4,6 +4,7 @@ import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 
 import utils.medians_metadata
+from utils.cached_dataset import CachedMediansDataset
 from utils.medians_dataset import MediansDataset
 from utils.medians_metadata import MediansMetadata
 
@@ -17,6 +18,7 @@ class MediansDataModule(pl.LightningDataModule):
             requires_norm: bool,
             batch_size: int,
             num_workers: int,
+            cache_dataset: bool,
     ):
         super().__init__()
 
@@ -24,11 +26,13 @@ class MediansDataModule(pl.LightningDataModule):
         self.bins_range = bins_range
         self.linear_encoder = linear_encoder
         self.requires_norm = requires_norm
+        self.cache_dataset = cache_dataset
 
         self.dataloader_args = {
             'batch_size': batch_size,
             'num_workers': num_workers,
             'pin_memory': True,
+            'persistent_workers': True,
         }
 
         self.dataset_train: MediansDataset | None = None
@@ -43,13 +47,14 @@ class MediansDataModule(pl.LightningDataModule):
             'bins_range': self.bins_range,
             'linear_encoder': self.linear_encoder,
             'requires_norm': self.requires_norm,
+            'use_cache': self.cache_dataset,
         }
 
         if stage == 'fit':
             assert "train" in self.medians_artifacts and "val" in self.medians_artifacts, \
                 "Both --train_medians_artifact and --val_medians_artifact are required for fitting."
-            self.dataset_train = MediansDataset(medians_artifact=self.medians_artifacts["train"], **common_config)
-            self.dataset_val = MediansDataset(medians_artifact=self.medians_artifacts["val"], **common_config)
+            self.dataset_train = CachedMediansDataset(medians_artifact=self.medians_artifacts["train"], **common_config)
+            self.dataset_val = CachedMediansDataset(medians_artifact=self.medians_artifacts["val"], **common_config)
         elif stage == 'test':
             assert "test" in self.medians_artifacts, "--test_medians_artifact is required for testing."
             self.dataset_test = MediansDataset(medians_artifact=self.medians_artifacts["test"], **common_config)
