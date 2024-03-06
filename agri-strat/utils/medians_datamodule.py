@@ -1,12 +1,8 @@
-from pathlib import Path
-
 import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 
-import utils.medians_metadata
 from utils.cached_dataset import CachedMediansDataset
 from utils.medians_dataset import MediansDataset
-from utils.medians_metadata import MediansMetadata
 
 
 class MediansDataModule(pl.LightningDataModule):

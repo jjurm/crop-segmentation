@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 import wandb
 from urllib.parse import urlparse
 
-from utils.constants import MEDIANS_DTYPE, LABEL_DTYPE
+from utils.constants import MEDIANS_DTYPE
 from utils.medians import get_medians_subpatch_path
 from utils.medians_metadata import MediansMetadata
 

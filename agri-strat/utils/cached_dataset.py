@@ -1,7 +1,7 @@
 import ctypes
 import multiprocessing as mp
+
 import numpy as np
-import torch
 
 from utils.medians_dataset import MediansDataset
 
