@@ -1,0 +1,31 @@
+apiVersion: run.ai/v2alpha1
+kind: InteractiveWorkload
+metadata:
+  name: &name ssh
+  namespace: runai-studentmichele-juraj
+spec:
+  image:
+    #value: lscr.io/linuxserver/openssh-server:latest
+    value: jjurm/runai-interactive
+  nodeType:
+    value: "CPU"
+  cpu:
+    value: "1"
+  name:
+    value: *name
+  username:
+    value: jmicko@student.ethz.ch
+  environment:
+    items:
+      PUID:
+        value: "1000"
+      PGID:
+        value: "20"
+      PUBLIC_KEY:
+        value: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDCUpJqFTi+pD2KqBvTbQdWVRdXuYAVB4eoqhVMajvBZqXOQUq6BxHSCKaLyxnxjmQFMRjfSstn/7GcgAK2XLr8JM/BhbJ+GVHlY9CndTLdMAD4qD71QVgC0+tJLV442dZeY5WhK7YW90m2gAYlddZTkYA/ULzaMZsRccz0NPrGSmEJYCuXlv998VZ5VYKYiLt6e18xECprMxUk6XFn/Gi7fgd+l2WyowU13iSRQdcisQQ8vrAU+P8d/YMPK082+MIf8h9htPsGvazAuEdMOM2fFjBsGFpFWxKG+WN3RrCsyhSG5RImXosBviNlPBP/wcsw4qahBJ4b8cg4uxCjUlLlw2ZAY7ywKK+lDuC7vwQbUzh18XyrAovB84GaGMpgWzQSICxLanDSM6oaGPoGW6TTkl/R7jPt/biA8HkyO0sWWWCqLDKvTkdmJrC0g15D31nOsTuklaWtJHWXxx+0txb5XJEiIkaynOY1BtxpmBCQy7X5hASuvWnQXgAY+YV6OfWzNF1mCZp3wkJcEDLPLIX/mHowxBMzQXDZnKnEa+37HYBubMxiCTjCQ04xHpMzk3gHETfIEdsNZS+an4GcUwEL/sZ45DTtUpjChfAUC/hHbtmwz5EKYlN7AM7uYGt/6svoinPEBFE0Z1sx8Ue0s3DCexlULnxPU4Kh1V/EUOuJHw== jjurm@jjurm"
+      SUDO_ACCESS:
+        value: "true"
+      USER_NAME:
+        value: "jovyan"
+      LOG_STDOUT:
+        value: "true"

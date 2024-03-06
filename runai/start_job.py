@@ -71,9 +71,31 @@ def get_preset_args(preset):
     elif preset == "gpu":
         return [
             "--cpu",
-            "16",
+            "8",
             "--gpu",
             "1",
+            "--large-shm",
+            "--preemptible",
+            "--node-type",
+            "A100",
+        ]
+    elif preset == "gpu-small":
+        return [
+            "--cpu",
+            "4",
+            "--gpu",
+            "0.2",
+            "--large-shm",
+            "--preemptible",
+            "--node-type",
+            "A100",
+        ]
+    elif preset == "gpu-half":
+        return [
+            "--cpu",
+            "4",
+            "--gpu",
+            "0.5",
             "--large-shm",
             "--preemptible",
             "--node-type",
@@ -114,8 +136,9 @@ def run_command(command):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--preset', type=str, required=True,
-                        choices=['basic', 'cpu', 'gpu'])
+                        choices=['basic', 'cpu', 'gpu', 'gpu-half', 'gpu-small'])
     parser.add_argument('--job-type', type=str, )
+    parser.add_argument("-e", "--env", type=str, nargs="+", help="Environment variables")
     parser.add_argument('--dry-run', action='store_true', help='Print the command instead of running it')
     parser.add_argument('--cmd', type=str, required=True, nargs=argparse.REMAINDER,
                         metavar="CMD", help='Command to run')
@@ -138,28 +161,32 @@ def main():
                         job_name,
                         "--environment",
                         f"WANDB_NAME={job_name_id}",
+                    ] + [
+                        x for var in args.env or [] for x in ["--environment", var]
+                    ] + [
                         "--image",
                         "jjurm/runai-job",
                         "--working-dir",
                         "/mydata/studentmichele/juraj/thesis-python/agri-strat",
+                        "--backoff-limit",
+                        "0",
                     ] + get_preset_args(args.preset) + (
                         ["--dry-run"] if args.dry_run else []
                     ) + [
-                        "--command",
                         "--",
-                        "bash",
-                        "-l",
-                        "-c",
-                        shlex.quote(shlex.join(args.cmd))
+                        "tmux",
+                        "new-session",
+                        "-s",
+                        "job",
+                        shlex.quote(shlex.join(args.cmd)),
                     ]
 
-    if args.dry_run:
-        print("\n".join(runai_command))
-
-    returncode = run_command(runai_command)
-    if returncode == 0:
-        write_job_increment(job_increment)
-        print(f"Wrote job increment {job_increment} to file")
+    print(" ".join(runai_command))
+    if not args.dry_run:
+        return_code = run_command(runai_command)
+        if return_code == 0:
+            write_job_increment(job_increment)
+            print(f"Wrote job increment {job_increment} to file")
 
 
 if __name__ == '__main__':
