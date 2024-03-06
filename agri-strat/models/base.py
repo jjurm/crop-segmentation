@@ -35,11 +35,12 @@ class BaseModelModule(pl.LightningModule):
             linear_encoder,
             learning_rate,
             monitor_metric: str,
+            weighted_loss: bool,
             parcel_loss=False,
-            class_weights=None,
-            crop_encoding=None,
+            class_counts=None,
+            crop_encoding=None,  # TODO remove if not needed in test stage
             checkpoint_epoch=None,  # TODO remove if not needed in test stage
-            **kwargs
+            **kwargs,
     ):
         """
         Parameters:
@@ -51,19 +52,22 @@ class BaseModelModule(pl.LightningModule):
             true labels have been converted into.
         learning_rate: float, default 1e-3
             The initial learning rate.
+        weighted_loss: boolean
+            Use a weighted loss function with precalculated weights per class.
         parcel_loss: boolean, default False
             If True, then a custom loss function is used which takes into account
             only the pixels of the parcels. If False, then all image pixels are
             used in the loss function.
-        class_weights: dict, default None
-            Weights per class to use in the loss function.
+        class_counts: dict, default None
+            Counts of pixels per class to use for class weights calculation for the loss function.
         crop_encoding: dict, default None
             A dictionary mapping class ids to class names.
         checkpoint_epoch: int, default None
             The epoch loaded for testing.
         """
         super(BaseModelModule, self).__init__()
-        self.save_hyperparameters(ignore=["class_weights", "linear_encoder", "num_bands", "num_time_steps"])
+        self.save_hyperparameters(
+            ignore=["class_counts", "linear_encoder", "crop_encoding", "num_bands", "num_time_steps"])
 
         self.linear_encoder = linear_encoder
         self.learning_rate = learning_rate
@@ -72,11 +76,9 @@ class BaseModelModule(pl.LightningModule):
         self.checkpoint_epoch = checkpoint_epoch
 
         num_classes = len(set(linear_encoder.values()))
-        # self.confusion_matrix = torch.zeros([num_classes, num_classes])
 
         # Loss function
-        class_weights = torch.tensor(
-            [class_weights[k] for k in sorted(class_weights.keys())]).cuda() if class_weights is not None else None
+        class_weights = self._calculate_class_weights(class_counts, parcel_loss).cuda() if weighted_loss else None
 
         self.loss_nll = nn.NLLLoss(weight=class_weights)
         self.loss_nll_parcel = nn.NLLLoss(weight=class_weights, ignore_index=0)
@@ -84,11 +86,45 @@ class BaseModelModule(pl.LightningModule):
         self.metric_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="macro", ignore_index=0)
         self.metric_f1w = MulticlassF1Score(num_classes=num_classes, average="weighted")
         self.metric_f1w_parcel = MulticlassF1Score(num_classes=num_classes, average="weighted", ignore_index=0)
-        self.confusion_matrix = MulticlassConfusionMatrix(num_classes=num_classes, normalize="none")
+        self.confusion_matrix = MulticlassConfusionMatrix(num_classes=num_classes, normalize="none",
+                                                          ignore_index=0 if parcel_loss else None)
 
         self.run_dir = Path(wandb.run.dir)
 
         self.model = get_model_class(model)(num_classes=num_classes, **kwargs)
+
+    def _calculate_class_weights(self, class_counts: dict[any, int], parcel_loss):
+        """
+        Calculate class weights for the loss function.
+        """
+        # Compute weights for each class
+        filtered_counts = {
+            self.linear_encoder[int(k)]:  # map the original label to the training label (for ordering)
+                (v if (int(k) != 0 or not parcel_loss) else 0)  # if parcel_loss, ignore the zero class
+            for k, v in class_counts.items()
+            if int(k) in self.linear_encoder  # only include classes that are in the linear encoder
+        }
+
+        all_counts = sum(filtered_counts.values())
+        n_classes = len(filtered_counts)
+        class_weights = [
+            (all_counts / (n_classes * v)) if v != 0 else 0  # if v == 0, then the class is ignored
+            for k, v in sorted(filtered_counts.items())
+        ]
+
+        # Log class weights as a table to Wandb
+        class_names = ["0"] + [name for _, name in SELECTED_CLASSES]
+        class_weights_table = wandb.Table(
+            columns=["ID", "Class Name", "Pixel count", "Weight"],
+            data=[
+                [id_, class_names[k], filtered_counts[k], class_weights[k]]
+                for id_, k in sorted(self.linear_encoder.items())
+                if (k != 0 or not parcel_loss)  # if parcel_loss, ignore the zero class
+            ],
+        )
+        wandb.log({"class_weights": class_weights_table})
+
+        return torch.tensor(class_weights)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
@@ -125,6 +161,8 @@ class BaseModelModule(pl.LightningModule):
                  on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss)
 
         loss = loss_nll_parcel if self.parcel_loss else loss_nll
+        if torch.isnan(loss):
+            return None
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -132,10 +170,11 @@ class BaseModelModule(pl.LightningModule):
         output = self.model(inputs)
         loss_nll = self.loss_nll(output, labels)
         loss_nll_parcel = self.loss_nll_parcel(output, labels)
-        self.log('val/loss_nll', loss_nll,
-                 on_step=False, on_epoch=True, logger=True, prog_bar=not self.parcel_loss)
-        self.log('val/loss_nll_parcel', loss_nll_parcel,
-                 on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss)
+        if not torch.isnan(loss_nll):
+            self.log('val/loss_nll', loss_nll,
+                     on_step=False, on_epoch=True, logger=True, prog_bar=not self.parcel_loss)
+            self.log('val/loss_nll_parcel', loss_nll_parcel,
+                     on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss)
 
         acc = self.metric_acc(output, labels)
         f1w = self.metric_f1w(output, labels)
@@ -162,7 +201,11 @@ class BaseModelModule(pl.LightningModule):
 
         data = []
         for i in range(self.confusion_matrix.num_classes):
+            if self.parcel_loss and i == 0:
+                continue
             for j in range(self.confusion_matrix.num_classes):
+                if self.parcel_loss and j == 0:
+                    continue
                 data.append([class_names[i], class_names[j], confusion_matrix[i, j]])
 
         fields = {

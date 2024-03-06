@@ -3,22 +3,26 @@
 __author__ = "Juraj Micko"
 __license__ = "MIT License"
 
+from wandb import Settings
+
 if __name__ == '__main__':
     print("Importing modules...")
 
+import os
 import argparse
 from pathlib import Path
 
 import lightning.pytorch as pl
 import torch
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
-from lightning.pytorch.loggers import WandbLogger
 
 import config as experiment_config
 import wandb
 from models.base import BaseModelModule
 from utils.custom_progress_bar import CustomProgressBar
 from utils.medians_datamodule import MediansDataModule
+from utils.custom_wandb_logger import CustomWandbLogger
+from utils.exception_tracker_callback import ExceptionTrackerCallback
 
 
 def parse_arguments():
@@ -47,14 +51,15 @@ def parse_arguments():
     parser.add_argument('--weighted_loss', action='store_true', default=False, required=False,
                         help='Use a weighted loss function with precalculated weights per class. Default False.')
 
-    parser.add_argument('--train_medians_artifact', type=str, default='logs/medians', required=False,
+    parser.add_argument('--train_medians_artifact', type=str, required=False,
                         help='Wandb artifact of type \'medians\' that references precomputed medians for training.')
-    parser.add_argument('--val_medians_artifact', type=str, default='logs/medians', required=False,
+    parser.add_argument('--val_medians_artifact', type=str, required=False,
                         help='Wandb artifact of type \'medians\' that references precomputed medians for validation.')
-    parser.add_argument('--test_medians_artifact', type=str, default='logs/medians', required=False,
+    parser.add_argument('--test_medians_artifact', type=str, required=False,
                         help='Wandb artifact of type \'medians\' that references precomputed medians for test.')
     parser.add_argument('--bins_range', type=int, nargs=2, default=[4, 9], required=True,
-                        help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). Default: [4, 9].')
+                        help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). '
+                             'Default: [4, 9].')
 
     parser.add_argument('--num_epochs', type=int, default=10, required=False,
                         help='Number of epochs. Default 10')
@@ -104,8 +109,16 @@ def get_config(args):
         'num_workers': args.num_workers,
         'num_gpus': args.num_gpus,
         'num_nodes': args.num_nodes,
+        'node_name': os.environ.get('NODE_NAME', None),
     }
     return config
+
+
+def get_tags(args, config):
+    tags = args.tags
+    if args.devtest or args.limit_batches:
+        tags.append("devtest")
+    return tags
 
 
 def create_datamodule(config):
@@ -116,6 +129,7 @@ def create_datamodule(config):
         requires_norm=config["requires_norm"],
         batch_size=config["batch_size"],
         num_workers=config["num_workers"],
+        cache_dataset=config["cache_dataset"],
     )
     datamodule.prepare_data()
     datamodule.setup('fit')
@@ -123,17 +137,31 @@ def create_datamodule(config):
 
 
 def create_model(config, datamodule):
-    return BaseModelModule(
-        model=config["model"],
+    unsaved_params = dict(
+        class_counts=datamodule.dataset_train.metadata.class_pixel_counts,
         linear_encoder=experiment_config.LINEAR_ENCODER,
-        parcel_loss=config["parcel_loss"],
-        monitor_metric=config["monitor_metric"],
-        class_weights=experiment_config.CLASS_WEIGHTS,
-        num_layers=3,
         num_bands=datamodule.get_num_bands(),
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
-        learning_rate=config["learning_rate"],
     )
+    if wandb.run.resumed:
+        # Load the model from the latest checkpoint
+        checkpoint_path = Path(wandb.run.dir) / "checkpoints" / "last.ckpt"
+        print(f"Resuming model, loading from checkpoint {checkpoint_path}")
+        return BaseModelModule.load_from_checkpoint(
+            checkpoint_path=checkpoint_path,
+            **unsaved_params,
+        )
+    else:
+        # Create a new model
+        return BaseModelModule(
+            weighted_loss=config["weighted_loss"],
+            model=config["model"],
+            parcel_loss=config["parcel_loss"],
+            monitor_metric=config["monitor_metric"],
+            num_layers=3,
+            learning_rate=config["learning_rate"],
+            **unsaved_params,
+        )
 
 
 def main():
@@ -143,19 +171,22 @@ def main():
     torch.set_float32_matmul_precision('medium')
 
     print("Intializing wandb run...")
+
     with wandb.init(
             project="agri-strat",
             job_type=args.job_type,
             notes=args.notes,
             tags=args.tags,
-            resume="auto",
+            resume="allow",
             config=config,
+            settings=Settings(_service_wait=60),
     ) as run:
         print("Creating datamodule, model, trainer...")
         datamodule = create_datamodule(config)
         model = create_model(config, datamodule)
 
         callbacks = [
+            ExceptionTrackerCallback(),
             LearningRateMonitor(),
             ModelCheckpoint(
                 dirpath=Path(wandb.run.dir) / "checkpoints",
@@ -163,11 +194,17 @@ def main():
                 monitor=config["monitor_metric"],
                 save_last='link',
                 save_top_k=-1,
-                mode='min',
+                mode='max',
                 auto_insert_metric_name=False,
             ),
             CustomProgressBar(),
         ]
+        logger = CustomWandbLogger(
+            experiment=run,
+            log_model='all',
+            checkpoint_name=f"model-{run.name}"
+        )
+
         trainer = pl.Trainer(
             accelerator="auto",
             devices=config["num_gpus"],
@@ -176,7 +213,7 @@ def main():
             check_val_every_n_epoch=1,
             precision='32-true',
             callbacks=callbacks,
-            logger=WandbLogger(experiment=run),
+            logger=logger,
             gradient_clip_val=10.0,
             deterministic=config["deterministic"],
             fast_dev_run=config["devtest"],
