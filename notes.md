@@ -55,17 +55,18 @@ python compute_medians.py \
 ```bash
 python experiment.py \
   --job_type train \
-  --tags script-in-development \
   --model unet \
+  --parcel_loss \
   --weighted_loss \
-  --train_medians_artifact s4a_tiny_medians_2ff2_train:latest \
-  --val_medians_artifact s4a_tiny_medians_2ff2_val:latest \
+  --train_medians_artifact s4a_temporal1_medians_84b6_train:latest \
+  --val_medians_artifact s4a_temporal1_medians_84b6_val:latest \
   --bins_range 4 9 \
-  --num_epochs 10 \
+  --num_epochs 40 \
   --batch_size 32 \
   --lr 1e-1 \
   --requires_norm \
-  --num_workers 6
+  --num_workers 16 \
+  --cached_dataset
 
   #--parcel_loss \
 ```
