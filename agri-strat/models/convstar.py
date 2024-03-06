@@ -27,10 +27,10 @@ class ConvSTARCell(nn.Module):
         self.gate = nn.Conv2d(input_size + hidden_size, hidden_size, kernel_size, padding=padding)
         self.update = nn.Conv2d(input_size, hidden_size, kernel_size, padding=padding)
 
-        init.orthogonal(self.update.weight)
-        init.orthogonal(self.gate.weight)
-        init.constant(self.update.bias, 0.)
-        init.constant(self.gate.bias, 1.)
+        init.orthogonal_(self.update.weight)
+        init.orthogonal_(self.gate.weight)
+        init.constant_(self.update.bias, 0.)
+        init.constant_(self.gate.bias, 1.)
 
     def forward(self, input_, prev_state):
         # get batch and spatial sizes
@@ -55,7 +55,7 @@ class ConvSTARCell(nn.Module):
 
 
 class ConvSTAR(nn.Module):
-    def __init__(self, num_classes, input_size=4, hidden_sizes=64, kernel_sizes=3, n_layers=3):
+    def __init__(self, num_classes, input_size=4, hidden_sizes=64, kernel_sizes=3, num_layers=3, **kwargs):
         """
         Parameters:
         -----------
@@ -64,28 +64,28 @@ class ConvSTAR(nn.Module):
             if integer, the same hidden size is used for all cells.
         kernel_sizes : integer or list. sizes of Conv2d gate kernels.
             if integer, the same kernel size is used for all cells.
-        n_layers : integer. number of chained `ConvSTARCell`.
+        num_layers : integer. number of chained `ConvSTARCell`.
         """
         super(ConvSTAR, self).__init__()
 
         self.input_size = input_size
 
         if not isinstance(hidden_sizes, list):
-            self.hidden_sizes = [hidden_sizes] * n_layers
+            self.hidden_sizes = [hidden_sizes] * num_layers
         else:
-            assert len(hidden_sizes) == n_layers, '`hidden_sizes` must have the same length as n_layers'
+            assert len(hidden_sizes) == num_layers, '`hidden_sizes` must have the same length as num_layers'
             self.hidden_sizes = hidden_sizes
 
         if not isinstance(kernel_sizes, list):
-            self.kernel_sizes = [kernel_sizes] * n_layers
+            self.kernel_sizes = [kernel_sizes] * num_layers
         else:
-            assert len(kernel_sizes) == n_layers, '`kernel_sizes` must have the same length as n_layers'
+            assert len(kernel_sizes) == num_layers, '`kernel_sizes` must have the same length as num_layers'
             self.kernel_sizes = kernel_sizes
 
-        self.n_layers = n_layers
+        self.num_layers = num_layers
 
         cells = []
-        for i in range(self.n_layers):
+        for i in range(self.num_layers):
             if i == 0:
                 input_dim = self.input_size
             else:
@@ -121,7 +121,7 @@ class ConvSTAR(nn.Module):
         The prediction of the last hidden layer.
         """
         if not hidden:
-            hidden = [None] * self.n_layers
+            hidden = [None] * self.num_layers
 
         x = x.transpose(1, 2)  # (B, T, C, H, W) -> (B, C, T, H, W)
 
@@ -133,7 +133,7 @@ class ConvSTAR(nn.Module):
         for timestep in range(timesteps):
             input_ = x[:, :, timestep, :, :]
 
-            for layer_idx in range(self.n_layers):
+            for layer_idx in range(self.num_layers):
                 cell = self.cells[layer_idx]
                 cell_hidden = hidden[layer_idx]
 
