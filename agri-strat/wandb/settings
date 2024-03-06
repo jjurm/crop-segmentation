@@ -1,3 +1,2 @@
 [default]
 ignore_globs=checkpoints/ckpt_*.ckpt,local/**
-run_tags=era2-dev

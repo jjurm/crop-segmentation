@@ -86,7 +86,7 @@ def recursive_search(split_rules, metadata, rule_loc: tuple[int, ...]) -> str | 
                     break
             elif key == "target":
                 if isinstance(filter_value, str):
-                    target.set(filter_value[0])
+                    target.set(filter_value)
                 else:
                     target.set(inner_rule_loc)
             elif key == "rules":

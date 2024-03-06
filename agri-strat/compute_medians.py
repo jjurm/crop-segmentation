@@ -273,7 +273,9 @@ def main():
             splits_name = splits_artifact.metadata.get("split_rules_name") if splits_artifact else (args.coco_prefix or "")
             splits_prefix = f"{splits_name}_" if splits_name else ""
             splits_id = f"{splits_prefix}{args.group_freq}_{''.join(args.bands)}_{args.output_size[0]}x{args.output_size[1]}"
-            out_path = Path('dataset') / 'medians' / splits_id
+            run_name_short_hash = hashlib.sha1(run.name.encode("utf-8")).hexdigest()[-6:]
+            splits_dir_name = f"{splits_id}-{run_name_short_hash}"
+            out_path = Path('dataset') / 'medians' / splits_dir_name
             out_path.mkdir(exist_ok=False, parents=True)
 
             # Process patches in parallel
@@ -308,13 +310,14 @@ def main():
                 f.write(medians_metadata.to_json())
             print(f"Medians metadata written to {metadata_filename}.")
 
-            short_hash = hashlib.sha1(splits_id.encode("utf-8")).hexdigest()[-4:]
+            splits_id_short_hash = hashlib.sha1(splits_id.encode("utf-8")).hexdigest()[-4:]
             artifact = wandb.Artifact(
-                name=f"{splits_prefix}medians_{short_hash}_{mode}",
+                name=f"{splits_prefix}{splits_id_short_hash}_{mode}",
                 type="medians",
                 metadata={
                     "split_rules_name": splits_name,
                     "splits_id": splits_id,
+                    "splits_dir_name": splits_dir_name,
                     "split": mode,
                 },
             )
