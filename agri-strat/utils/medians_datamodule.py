@@ -66,10 +66,10 @@ class MediansDataModule(pl.LightningDataModule):
     def test_dataloader(self):
         return DataLoader(self.dataset_test, shuffle=False, **self.dataloader_args)
 
-    def get_num_bands(self):
+    def get_bands(self) -> list[str]:
         """
-        Returns number of bands that the model should be created for.
+        Returns a list of bands that the model should be created for.
         """
         assert self.dataset_train is not None or self.dataset_test is not None, "No dataset loaded."
         dataset = self.dataset_train if self.dataset_train is not None else self.dataset_test
-        return len(dataset.metadata.bands)
+        return dataset.metadata.bands

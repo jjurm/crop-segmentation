@@ -1,15 +1,13 @@
-#! /usr/bin/env python
+#!/usr/bin/env python
 
 __author__ = "Juraj Micko"
 __license__ = "MIT License"
 
-from wandb import Settings
-
 if __name__ == '__main__':
     print("Importing modules...")
 
-import os
 import argparse
+import os
 from pathlib import Path
 
 import lightning.pytorch as pl
@@ -20,9 +18,10 @@ import config as experiment_config
 import wandb
 from models.base import BaseModelModule
 from utils.custom_progress_bar import CustomProgressBar
-from utils.medians_datamodule import MediansDataModule
 from utils.custom_wandb_logger import CustomWandbLogger
 from utils.exception_tracker_callback import ExceptionTrackerCallback
+from utils.medians_datamodule import MediansDataModule
+from wandb import Settings
 
 
 def parse_arguments():
@@ -57,7 +56,7 @@ def parse_arguments():
                         help='Wandb artifact of type \'medians\' that references precomputed medians for validation.')
     parser.add_argument('--test_medians_artifact', type=str, required=False,
                         help='Wandb artifact of type \'medians\' that references precomputed medians for test.')
-    parser.add_argument('--bins_range', type=int, nargs=2, default=[4, 9], required=True,
+    parser.add_argument('--bins_range', type=int, nargs=2, default=[4, 9], required=False,
                         help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). '
                              'Default: [4, 9].')
 
@@ -143,7 +142,7 @@ def create_model(config, datamodule):
     unsaved_params = dict(
         class_counts=datamodule.dataset_train.metadata.class_pixel_counts,
         linear_encoder=experiment_config.LINEAR_ENCODER,
-        num_bands=datamodule.get_num_bands(),
+        bands=datamodule.get_bands(),
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
     )
     if wandb.run.resumed:

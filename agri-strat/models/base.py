@@ -36,6 +36,7 @@ class BaseModelModule(pl.LightningModule):
             learning_rate,
             monitor_metric: str,
             weighted_loss: bool,
+            bands: list[str],
             parcel_loss=False,
             class_counts=None,
             crop_encoding=None,  # TODO remove if not needed in test stage
@@ -67,7 +68,7 @@ class BaseModelModule(pl.LightningModule):
         """
         super(BaseModelModule, self).__init__()
         self.save_hyperparameters(
-            ignore=["class_counts", "linear_encoder", "crop_encoding", "num_bands", "num_time_steps"])
+            ignore=["class_counts", "linear_encoder", "crop_encoding", "bands", "num_time_steps"])
 
         self.linear_encoder = linear_encoder
         self.learning_rate = learning_rate
@@ -91,7 +92,9 @@ class BaseModelModule(pl.LightningModule):
 
         self.run_dir = Path(wandb.run.dir)
 
-        self.model = get_model_class(model)(num_classes=num_classes, **kwargs)
+        self.model = get_model_class(model)(num_classes=num_classes, num_bands=len(bands), **kwargs)
+
+        self.validation_examples = None
 
     def _calculate_class_weights(self, class_counts: dict[any, int], parcel_loss):
         """
@@ -158,7 +161,7 @@ class BaseModelModule(pl.LightningModule):
         }]
 
     def training_step(self, batch, batch_idx):
-        inputs, labels = batch['medians'], batch['labels']  # (B, K, H, W), (B, H, W)
+        inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
         output = self.model(inputs)
         loss_nll = self.loss_nll(output, labels)
         loss_nll_parcel = self.loss_nll_parcel(output, labels)
@@ -172,9 +175,22 @@ class BaseModelModule(pl.LightningModule):
             return None
         return loss
 
+    def on_validation_epoch_start(self) -> None:
+        self.validation_examples = {
+            "inputs": [],
+            "labels": [],
+            "outputs": [],
+        }
+
     def validation_step(self, batch, batch_idx):
-        inputs, labels = batch['medians'], batch['labels']  # (B, K, H, W), (B, H, W)
+        inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
         output = self.model(inputs)
+        has_examples, want_examples = len(self.validation_examples["inputs"]), 4
+        if has_examples < want_examples:
+            self.validation_examples["inputs"].extend(inputs[:(want_examples - has_examples)].cpu().detach().numpy())
+            self.validation_examples["labels"].extend(labels[:(want_examples - has_examples)].cpu().detach().numpy())
+            self.validation_examples["outputs"].extend(output[:(want_examples - has_examples)].cpu().detach().numpy())
+
         loss_nll = self.loss_nll(output, labels)
         loss_nll_parcel = self.loss_nll_parcel(output, labels)
         if not torch.isnan(loss_nll):
@@ -200,8 +216,75 @@ class BaseModelModule(pl.LightningModule):
     def on_validation_epoch_end(self) -> None:
         confusion_matrix = self.confusion_matrix.compute()
         wandb_cm = self._get_wandb_confusion_matrix(confusion_matrix)
+
+        examples_table = wandb.Table(columns=["id", "inputs", "ground truth", "predictions"])
+
+        # TODO fix
+        rgb_bands = ["B04", "B03", "B02"]
+        images = []
+        class_labels = {0: "0"} | {self.linear_encoder[k]: v for k, v in SELECTED_CLASSES}
+        class_set = [
+            {"id": id_, "name": name}
+            for id_, name in class_labels.items()
+        ]
+        for i, (
+                inputs,  # (T, C, H, W)
+                labels,  # (H, W)
+                outputs,  # (P, H, W)
+        ) in enumerate(zip(
+            self.validation_examples["inputs"],
+            self.validation_examples["labels"],
+            self.validation_examples["outputs"],
+        )):
+            pixels = np.flip(inputs[3, 0:3, :, :], axis=1).transpose((1, 2, 0))
+            pixels_scaled = np.floor(pixels * 256).clip(0, 255).astype(np.uint8)
+
+            images.append(wandb.Image(
+                pixels_scaled,
+                caption=f"Example {i + 1}",
+                masks={
+                    "ground_truth": {
+                        "mask_data": labels,
+                        "class_labels": class_labels,
+                    },
+                    "predictions": {
+                        "mask_data": outputs.argmax(axis=0),
+                        "class_labels": class_labels,
+                    },
+                },
+                classes=class_set,
+            ))
+
+            examples_table.add_data(
+                i,
+                wandb.Image(pixels_scaled, caption=f"Example {i + 1}"),
+                wandb.Image(
+                    pixels_scaled,
+                    masks={
+                        "ground_truth": {
+                            "mask_data": labels,
+                            "class_labels": class_labels,
+                        },
+                    },
+                ),
+                wandb.Image(
+                    pixels_scaled,
+                    masks={
+                        "predictions": {
+                            "mask_data": outputs.argmax(axis=0),
+                            "class_labels": class_labels,
+                        },
+                    },
+                ),
+            )
+
         if self.trainer.state.stage != "sanity_check":
-            wandb.log({"confusion_matrix": wandb_cm, "epoch": self.current_epoch})
+            wandb.log({
+                "epoch": self.current_epoch,
+                "confusion_matrix": wandb_cm,
+                "examples": images,
+                "examples_table": examples_table,
+            })
 
     def _get_wandb_confusion_matrix(self, confusion_matrix):
         class_names = ["0"] + [name for _, name in SELECTED_CLASSES]

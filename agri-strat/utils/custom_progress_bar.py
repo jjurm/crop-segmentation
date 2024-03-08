@@ -1,7 +1,7 @@
-from lightning.pytorch.callbacks import RichProgressBar
+from lightning.pytorch.callbacks import TQDMProgressBar
 
 
-class CustomProgressBar(RichProgressBar):
+class CustomProgressBar(TQDMProgressBar):
     def get_metrics(self, *args, **kwargs):
         # don't show the version number
         items = super().get_metrics(*args, **kwargs)
