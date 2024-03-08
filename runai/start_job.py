@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import argparse
 import shlex
 import subprocess
@@ -7,23 +8,100 @@ from codenamize import codenamize
 from pathlib import Path
 
 
+PRESETS = {
+    "basic": [
+        "--cpu",
+        "1",
+        "--gpu",
+        "0.2",
+        "--large-shm",
+    ],
+    "cpu": [
+        "--cpu",
+        "32",
+        "--preemptible",
+        "--node-type",
+        "CPU",
+    ],
+    "cpu-small": [
+        "--cpu",
+        "8",
+        "--preemptible",
+        "--node-type",
+        "CPU",
+    ],
+    "gpu": [
+        "--cpu",
+        "8",
+        "--gpu",
+        "1",
+        "--large-shm",
+        "--preemptible",
+        "--node-type",
+        "A100",
+    ],
+    "gpu-small": [
+        "--cpu",
+        "4",
+        "--gpu",
+        "0.2",
+        "--large-shm",
+        "--preemptible",
+        "--node-type",
+        "A100",
+    ],
+    "gpu-half": [
+        "--cpu",
+        "4",
+        "--gpu",
+        "0.5",
+        "--large-shm",
+        "--preemptible",
+        "--node-type",
+        "A100",
+    ],
+}
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--preset', type=str, required=True,
+                        choices=PRESETS.keys(),)
+    parser.add_argument('--tmux', action='store_true', help='Run the command in a tmux session')
+    parser.add_argument('--job-type', type=str, )
+    parser.add_argument("-e", "--env", type=str, nargs="+", help="Environment variables")
+    parser.add_argument('--dry-run', action='store_true', help='Print the command instead of running it')
+    parser.add_argument('--cmd', type=str, required=True, nargs=argparse.REMAINDER,
+                        metavar="CMD", help='Command to run')
+    args = parser.parse_args()
+    return args
+
+
 def get_job_type(args):
     if args.job_type:
         return args.job_type
-    elif args.cmd[:2] == ["python", "split_data.py"]:
+    elif "split_data.py" in args.cmd[:2]:
         return "generate-split"
-    elif args.cmd[:2] == ["python", "compute_medians.py"]:
+    elif "compute_medians.py" in args.cmd[:2]:
         return "compute-medians"
-    elif args.cmd[:2] == ["python", "experiment.py"]:
+    elif "experiment.py" in args.cmd[:2]:
         parser = argparse.ArgumentParser()
         parser.add_argument('--job_type', type=str, default="train", required=False,
                             choices=['train', 'val'])
-        args2, _ = parser.parse_known_args(args.cmd[2:])
+        args2, _ = parser.parse_known_args(args.cmd[1:])
         return args2.job_type
     elif args.cmd[:1] == ["wandb"]:
         return "cli"
     else:
         raise ValueError(f"Unknown job type")
+
+
+def get_job_prefix(job_type):
+    return {
+        "generate-split": "split",
+        "compute-medians": "med",
+        "train": "t",
+    }.get(job_type, job_type)
 
 
 def get_job_increment():
@@ -49,58 +127,6 @@ def write_job_increment(job_increment):
     job_counter_file_path = Path(__file__).parent / "job_counter.txt"
     with open(job_counter_file_path, "w") as f:
         f.write(str(job_increment))
-
-
-def get_preset_args(preset):
-    if preset == "basic":
-        return [
-            "--cpu",
-            "1",
-            "--gpu",
-            "0.2",
-            "--large-shm",
-        ]
-    elif preset == "cpu":
-        return [
-            "--cpu",
-            "32",
-            "--preemptible",
-            "--node-type",
-            "CPU",
-        ]
-    elif preset == "gpu":
-        return [
-            "--cpu",
-            "8",
-            "--gpu",
-            "1",
-            "--large-shm",
-            "--preemptible",
-            "--node-type",
-            "A100",
-        ]
-    elif preset == "gpu-small":
-        return [
-            "--cpu",
-            "4",
-            "--gpu",
-            "0.2",
-            "--large-shm",
-            "--preemptible",
-            "--node-type",
-            "A100",
-        ]
-    elif preset == "gpu-half":
-        return [
-            "--cpu",
-            "4",
-            "--gpu",
-            "0.5",
-            "--large-shm",
-            "--preemptible",
-            "--node-type",
-            "A100",
-        ]
 
 
 def run_command(command):
@@ -134,17 +160,10 @@ def run_command(command):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--preset', type=str, required=True,
-                        choices=['basic', 'cpu', 'gpu', 'gpu-half', 'gpu-small'])
-    parser.add_argument('--job-type', type=str, )
-    parser.add_argument("-e", "--env", type=str, nargs="+", help="Environment variables")
-    parser.add_argument('--dry-run', action='store_true', help='Print the command instead of running it')
-    parser.add_argument('--cmd', type=str, required=True, nargs=argparse.REMAINDER,
-                        metavar="CMD", help='Command to run')
-    args = parser.parse_args()
+    args = parse_args()
 
-    job_prefix = get_job_type(args)
+    job_type = get_job_type(args)
+    job_prefix = get_job_prefix(job_type)
     job_increment = get_job_increment()
     job_codename = codenamize(
         job_increment,
@@ -154,6 +173,13 @@ def main():
     job_name = f"{job_prefix}-{job_codename}"
     job_name_id = f"{job_prefix}-{job_codename}-{job_increment}"
 
+    job_command = [
+        "tmux",
+        "new-session",
+        "-s",
+        "job",
+        shlex.quote(shlex.join(args.cmd)),
+    ] if args.tmux else args.cmd
     runai_command = [
                         "runai",
                         "submit",
@@ -170,16 +196,11 @@ def main():
                         "/mydata/studentmichele/juraj/thesis-python/agri-strat",
                         "--backoff-limit",
                         "0",
-                    ] + get_preset_args(args.preset) + (
+                    ] + PRESETS[args.preset] + (
                         ["--dry-run"] if args.dry_run else []
                     ) + [
                         "--",
-                        "tmux",
-                        "new-session",
-                        "-s",
-                        "job",
-                        shlex.quote(shlex.join(args.cmd)),
-                    ]
+                    ] + job_command
 
     print(" ".join(runai_command))
     if not args.dry_run:
