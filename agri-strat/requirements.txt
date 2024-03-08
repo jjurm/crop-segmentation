@@ -20,3 +20,6 @@ typing_extensions
 packaging
 pyyaml
 pyarrow
+rasterio
+shapely
+geopandas

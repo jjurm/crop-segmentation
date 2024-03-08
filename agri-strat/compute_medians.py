@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 This script takes the txt split files produced by `split_data.py` and computes the medians for each patch in the dataset
 and saves them to disk. The medians are computed for each band and for each month in the year.
@@ -192,6 +193,8 @@ def process_patch(out_path, data_path, bands, group_freq, output_size, semaphore
         int(c): int(np.sum(labels == c))
         for c in np.unique(labels)
     }
+
+    netcdf.close()
 
     return num_subpatches, mode, class_pixel_counts
 
