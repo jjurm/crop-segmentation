@@ -35,9 +35,14 @@ wandb artifact put \
 
 python split_data.py \
   --split_rules_artifact s4a_temporal1:latest \
-  --netcdf_path ../data/S4A/data \
+  --netcdf_path dataset/netcdf \
   --seed 0 \
   --shuffle
+  
+# Or generate a split from train/val/test COCO files
+python split_data.py \
+  --coco_path_prefix dataset/coco_files/exp1_patches5000_strat_coco \
+  --netcdf_path dataset/netcdf
 ```
 
 compute medians (and class counts)
@@ -45,7 +50,7 @@ compute medians (and class counts)
 ```bash
 python compute_medians.py \
   --splits_artifact s4a_temporal1_split:latest \
-  --netcdf_path ../data/S4A/data \
+  --netcdf_path dataset/netcdf \
   --group_freq 1MS \
   --bands B02 B03 B04 B08 \
   --output_size 61 61 \
