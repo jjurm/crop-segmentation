@@ -72,6 +72,7 @@ class BaseModelModule(pl.LightningModule):
 
         self.linear_encoder = linear_encoder
         self.learning_rate = learning_rate
+        self.bands = bands
         self.parcel_loss = parcel_loss
         self.crop_encoding = crop_encoding
         self.checkpoint_epoch = checkpoint_epoch
@@ -177,6 +178,8 @@ class BaseModelModule(pl.LightningModule):
 
     def on_validation_epoch_start(self) -> None:
         self.validation_examples = {
+            "patch": [],
+            "subpatch": [],
             "inputs": [],
             "labels": [],
             "outputs": [],
@@ -185,8 +188,12 @@ class BaseModelModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
         output = self.model(inputs)
+
+        # Collect validation examples
         has_examples, want_examples = len(self.validation_examples["inputs"]), 4
         if has_examples < want_examples:
+            self.validation_examples["patch"].extend(batch["patch_path"][:(want_examples - has_examples)].cpu().detach().numpy())
+            self.validation_examples["subpatch"].extend(batch["subpatch_id"][:(want_examples - has_examples)].cpu().detach().numpy())
             self.validation_examples["inputs"].extend(inputs[:(want_examples - has_examples)].cpu().detach().numpy())
             self.validation_examples["labels"].extend(labels[:(want_examples - has_examples)].cpu().detach().numpy())
             self.validation_examples["outputs"].extend(output[:(want_examples - has_examples)].cpu().detach().numpy())
@@ -217,66 +224,7 @@ class BaseModelModule(pl.LightningModule):
         confusion_matrix = self.confusion_matrix.compute()
         wandb_cm = self._get_wandb_confusion_matrix(confusion_matrix)
 
-        examples_table = wandb.Table(columns=["id", "inputs", "ground truth", "predictions"])
-
-        # TODO fix
-        rgb_bands = ["B04", "B03", "B02"]
-        images = []
-        class_labels = {0: "0"} | {self.linear_encoder[k]: v for k, v in SELECTED_CLASSES}
-        class_set = [
-            {"id": id_, "name": name}
-            for id_, name in class_labels.items()
-        ]
-        for i, (
-                inputs,  # (T, C, H, W)
-                labels,  # (H, W)
-                outputs,  # (P, H, W)
-        ) in enumerate(zip(
-            self.validation_examples["inputs"],
-            self.validation_examples["labels"],
-            self.validation_examples["outputs"],
-        )):
-            pixels = np.flip(inputs[3, 0:3, :, :], axis=1).transpose((1, 2, 0))
-            pixels_scaled = np.floor(pixels * 256).clip(0, 255).astype(np.uint8)
-
-            images.append(wandb.Image(
-                pixels_scaled,
-                caption=f"Example {i + 1}",
-                masks={
-                    "ground_truth": {
-                        "mask_data": labels,
-                        "class_labels": class_labels,
-                    },
-                    "predictions": {
-                        "mask_data": outputs.argmax(axis=0),
-                        "class_labels": class_labels,
-                    },
-                },
-                classes=class_set,
-            ))
-
-            examples_table.add_data(
-                i,
-                wandb.Image(pixels_scaled, caption=f"Example {i + 1}"),
-                wandb.Image(
-                    pixels_scaled,
-                    masks={
-                        "ground_truth": {
-                            "mask_data": labels,
-                            "class_labels": class_labels,
-                        },
-                    },
-                ),
-                wandb.Image(
-                    pixels_scaled,
-                    masks={
-                        "predictions": {
-                            "mask_data": outputs.argmax(axis=0),
-                            "class_labels": class_labels,
-                        },
-                    },
-                ),
-            )
+        examples_table, images = self._get_val_examples_and_table()
 
         if self.trainer.state.stage != "sanity_check":
             wandb.log({
@@ -309,6 +257,69 @@ class BaseModelModule(pl.LightningModule):
             fields,
             {"title": f"Confusion Matrix"},
         )
+
+    def _get_val_examples_and_table(self):
+        examples_table = wandb.Table(columns=["patch", "subpatch", "inputs", "ground truth", "predictions"])
+        rgb_band_indices = [self.bands.index(band) for band in ["B04", "B03", "B02"]]
+        images = []
+        class_labels = {0: "0"} | {self.linear_encoder[k]: v for k, v in SELECTED_CLASSES}
+        class_set = [
+            {"id": id_, "name": name}
+            for id_, name in class_labels.items()
+        ]
+        for i, (
+                patch,
+                subpatch,
+                inputs,  # (T, C, H, W)
+                labels,  # (H, W)
+                outputs,  # (P, H, W)
+        ) in enumerate(zip(
+            self.validation_examples["patch"],
+            self.validation_examples["subpatch"],
+            self.validation_examples["inputs"],
+            self.validation_examples["labels"],
+            self.validation_examples["outputs"],
+        )):
+            pixels = np.stack([
+                inputs[3, band_index, :, :]  # 3 is the time index
+                for band_index in rgb_band_indices
+            ], axis=-1)  # Channel should be last, i.e. (H, W, C)
+            pixels_scaled = np.floor(pixels * 256).clip(0, 255).astype(np.uint8)
+            patch_name = Path(patch).stem
+
+            ground_truth_mask = {
+                "ground_truth": {
+                    "mask_data": labels,
+                    "class_labels": class_labels,
+                },
+            }
+            prediction_mask = {
+                "prediction": {
+                    "mask_data": outputs.argmax(axis=0),
+                    "class_labels": class_labels,
+                },
+            }
+            images.append(wandb.Image(
+                pixels_scaled,
+                caption=f"({i + 1}) {patch_name}/{subpatch}",
+                masks=ground_truth_mask | prediction_mask,
+                classes=class_set,
+            ))
+
+            examples_table.add_data(
+                patch_name,
+                subpatch,
+                wandb.Image(pixels_scaled, caption=f"inputs ({i + 1})"),
+                wandb.Image(
+                    pixels_scaled, caption=f"ground truth ({i + 1})",
+                    masks=ground_truth_mask,
+                ),
+                wandb.Image(
+                    pixels_scaled, caption=f"prediction ({i + 1})",
+                    masks=prediction_mask,
+                ),
+            )
+        return examples_table, images
 
     def on_test_epoch_end(self):
         self.confusion_matrix = self.confusion_matrix.cpu().detach().numpy()
