@@ -8,12 +8,17 @@ Information about each patch (year, tile, patch_x, patch_y) is taken from the fi
 import argparse
 from pathlib import Path
 
+import netCDF4
 import numpy as np
+import pandas as pd
+from tqdm import tqdm
 
 import wandb
 from utils.splits.coco import split_by_coco_files
+from utils.splits.patch.patch_processor import PatchProcessor
+from utils.splits.patch.pixel_counter import PixelCounter
+from utils.splits.patch.visualize import PatchVisualizer
 from utils.splits.split_rules import split_by_split_rules
-from utils.splits.visualize import create_split_visualization
 
 
 def parse_arguments():
@@ -29,7 +34,45 @@ def parse_arguments():
                         help='Shuffle the order of patches written out. Default: False.')
     parser.add_argument('--artifact_name_prefix', type=str, default=None, required=False,
                         help='Prefix for the name of the artifact that will be logged.')
+    parser.add_argument('--limit_patches', type=int, default=None, required=False,
+                        help='Limit the number of patches to process, for debugging. Default: None.')
     return parser.parse_args()
+
+
+def create_artifact(
+        args,
+        split_rules_name: str | None,
+        split_df: pd.DataFrame,
+        patch_processors: list[PatchProcessor],
+):
+    print("Creating artifact...")
+    artifact_name_prefix = args.artifact_name_prefix or split_rules_name
+    artifact = wandb.Artifact(
+        name=f"{artifact_name_prefix}_split",
+        type="split",
+        metadata={
+            "split_rules_name": split_rules_name,
+        },
+    )
+
+    # Write a txt file with the relative paths of the patches for each split
+    splits_dir = Path(wandb.run.dir) / 'splits'
+    splits_dir.mkdir(parents=True, exist_ok=True)
+    for target, target_df in split_df.groupby('target'):
+        target_file_path = splits_dir / f"{target}.txt"
+        target_df.drop(columns='target').to_csv(target_file_path, index=False, header=False)
+        print(f"Split {target} written to {target_file_path}.")
+    artifact.add_dir(splits_dir.as_posix(), name="splits")
+
+    # Log number of patches per split
+    patch_counts = split_df['target'].value_counts()
+    print(patch_counts.to_string(header=False))
+    artifact.add(wandb.Table(dataframe=patch_counts.to_frame().reset_index()), name="patch_counts")
+
+    for patch_processor in patch_processors:
+        patch_processor.log_to_artifact(artifact)
+
+    wandb.run.log_artifact(artifact)
 
 
 def main():
@@ -44,48 +87,40 @@ def main():
         if args.split_rules_artifact is not None and args.coco_path_prefix is not None:
             raise ValueError("Only one of split_rules_artifact or coco_path_prefix can be provided.")
 
-        data_path = Path(args.netcdf_path)
-        patch_paths = [
-            patch_path.relative_to(data_path)
-            for patch_path in sorted(list(data_path.glob('**/*.nc')))
-        ]
+        netcdf_path = Path(args.netcdf_path)
 
         if args.split_rules_artifact is not None:
+            patch_paths = [
+                patch_path.relative_to(netcdf_path)
+                for patch_path in sorted(list(netcdf_path.glob('**/*.nc')))
+            ]
+            if args.limit_patches is not None:
+                patch_paths = patch_paths[:args.limit_patches]
+                run.tags = run.tags + ("devtest",)
             split_df, split_rules_name = split_by_split_rules(args.split_rules_artifact, patch_paths)
         elif args.coco_path_prefix is not None:
             split_df, split_rules_name = split_by_coco_files(args.coco_path_prefix)
         else:
             raise ValueError("Either split_rules_artifact or coco_path_prefix must be provided.")
 
-        gpkg_path = create_split_visualization(split_df, data_path)
+        # Process each patch
+        patch_processors = [
+            PixelCounter(),
+            PatchVisualizer(netcdf_path),
+        ]
+        with tqdm(total=len(split_df)) as pbar:
+            for target, split in split_df.groupby("target"):
+                for i, row in split.iterrows():
+                    with netCDF4.Dataset(netcdf_path / row["path"]) as dataset:
+                        for patch_processor in patch_processors:
+                            patch_processor.process(row["path"], target, dataset)
+                    pbar.update(1)
 
         if args.shuffle:
             split_df = split_df.sample(frac=1).reset_index(drop=True)
 
-        # Log number of patches per split
-        patch_counts = split_df['target'].value_counts()
-        print(patch_counts.to_string(header=False))
-
-        # Write a txt for each split
-        splits_dir = Path(run.dir) / 'splits'
-        splits_dir.mkdir(parents=True, exist_ok=True)
-        for target, target_df in split_df.groupby('target'):
-            target_file_path = splits_dir / f"{target}.txt"
-            target_df.drop(columns='target').to_csv(target_file_path, index=False, header=False)
-            print(f"Split {target} written to {target_file_path}.")
-
-        artifact_name_prefix = args.artifact_name_prefix or split_rules_name
-        artifact = wandb.Artifact(
-            name=f"{artifact_name_prefix}_split",
-            type="split",
-            metadata={
-                "split_rules_name": split_rules_name,
-            },
-        )
-        artifact.add_dir(splits_dir.as_posix(), name="splits")
-        artifact.add(wandb.Table(dataframe=patch_counts.to_frame().reset_index()), name="patch_counts")
-        artifact.add(gpkg_path.as_posix(), name="splits_polygons")
-        run.log_artifact(artifact)
+        # Create a wandb artifact
+        create_artifact(args, split_rules_name, split_df, patch_processors)
 
 
 if __name__ == '__main__':

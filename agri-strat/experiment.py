@@ -50,15 +50,14 @@ def parse_arguments():
     parser.add_argument('--weighted_loss', action='store_true', default=False, required=False,
                         help='Use a weighted loss function with precalculated weights per class. Default False.')
 
-    parser.add_argument('--train_medians_artifact', type=str, required=False,
-                        help='Wandb artifact of type \'medians\' that references precomputed medians for training.')
-    parser.add_argument('--val_medians_artifact', type=str, required=False,
-                        help='Wandb artifact of type \'medians\' that references precomputed medians for validation.')
-    parser.add_argument('--test_medians_artifact', type=str, required=False,
-                        help='Wandb artifact of type \'medians\' that references precomputed medians for test.')
+    parser.add_argument('--medians_artifact', type=str, required=True,
+                        help='Wandb artifact of type \'medians\' that references precomputed medians.')
+    parser.add_argument('--medians_path', type=str, default='dataset/medians', required=False,
+                        help='Path to the directory with subdirectories of medians. Default dataset/medians')
+    parser.add_argument('--split_artifact', type=str, required=True,
+                        help='Wandb artifact of type \'split\' that references the train/val/test splits.')
     parser.add_argument('--bins_range', type=int, nargs=2, default=[4, 9], required=False,
-                        help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). '
-                             'Default: [4, 9].')
+                        help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). Default: [4, 9].')
 
     parser.add_argument('--num_epochs', type=int, default=10, required=False,
                         help='Number of epochs. Default 10')
@@ -91,11 +90,9 @@ def get_config(args):
         'limit_val_batches': args.limit_batches[1] if args.limit_batches and len(args.limit_batches) >= 2 and
                                                       args.limit_batches[1] > 0 else None,
 
-        'medians_artifacts': {
-            'train': args.train_medians_artifact,
-            'val': args.val_medians_artifact,
-            'test': args.test_medians_artifact,
-        },
+        'medians_artifact': args.medians_artifact,
+        'medians_path': args.medians_path,
+        'split_artifact': args.split_artifact,
         'bins_range': args.bins_range,
 
         'parcel_loss': args.parcel_loss,
@@ -125,7 +122,9 @@ def get_tags(args, config):
 
 def create_datamodule(config):
     datamodule = MediansDataModule(
-        medians_artifacts=config["medians_artifacts"],
+        medians_artifact=config["medians_artifact"],
+        medians_path=config["medians_path"],
+        split_artifact=config["split_artifact"],
         bins_range=config["bins_range"],
         linear_encoder=experiment_config.LINEAR_ENCODER,
         requires_norm=config["requires_norm"],
@@ -140,7 +139,7 @@ def create_datamodule(config):
 
 def create_model(config, datamodule):
     unsaved_params = dict(
-        class_counts=datamodule.dataset_train.metadata.class_pixel_counts,
+        class_counts=datamodule.pixel_counts['train'],
         linear_encoder=experiment_config.LINEAR_ENCODER,
         bands=datamodule.get_bands(),
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,

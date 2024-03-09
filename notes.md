@@ -49,13 +49,15 @@ compute medians (and class counts)
 
 ```bash
 python compute_medians.py \
-  --splits_artifact s4a_temporal1_split:latest \
   --netcdf_path dataset/netcdf \
+  --medians_path dataset/medians \
   --group_freq 1MS \
   --bands B02 B03 B04 B08 \
   --output_size 61 61 \
   --num_workers 32
 ```
+
+training experiment
 
 ```bash
 python experiment.py \
@@ -63,15 +65,15 @@ python experiment.py \
   --model unet \
   --parcel_loss \
   --weighted_loss \
-  --train_medians_artifact s4a_temporal1_medians_84b6_train:latest \
-  --val_medians_artifact s4a_temporal1_medians_84b6_val:latest \
+  --medians_artifact 1MS_B02B03B04B08_61x61:latest \
+  --medians_path dataset/medians \
+  --split_artifact s4a_tiny_split:latest \
   --bins_range 4 9 \
   --num_epochs 40 \
   --batch_size 32 \
   --lr 1e-1 \
   --requires_norm \
-  --num_workers 16 \
-  --cached_dataset
+  --num_workers 16
 
   #--parcel_loss \
 ```

@@ -15,14 +15,8 @@ def create_shared_cache(ctype, shape):
 
 
 class CachedMediansDataset(MediansDataset):
-    def __init__(self,
-                 medians_artifact: str,
-                 bins_range: tuple[int, int],
-                 linear_encoder: dict,
-                 requires_norm: bool,
-                 use_cache: bool,
-                 ):
-        super().__init__(medians_artifact, bins_range, linear_encoder, requires_norm)
+    def __init__(self, use_cache: bool, **kwargs):
+        super().__init__(**kwargs)
 
         self.use_cache = use_cache
         if use_cache:
