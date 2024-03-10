@@ -106,14 +106,14 @@ def main():
         # Process each patch
         patch_processors = [
             PixelCounter(),
-            PatchVisualizer(netcdf_path),
+            PatchVisualizer(),
         ]
         with tqdm(total=len(split_df)) as pbar:
             for target, split in split_df.groupby("target"):
                 for i, row in split.iterrows():
                     with netCDF4.Dataset(netcdf_path / row["path"]) as dataset:
                         for patch_processor in patch_processors:
-                            patch_processor.process(row["path"], target, dataset)
+                            patch_processor.process(Path(row["path"]), target, dataset)
                     pbar.update(1)
 
         if args.shuffle:

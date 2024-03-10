@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import netCDF4
 import numpy as np
 import wandb
@@ -13,7 +15,7 @@ class PixelCounter(PatchProcessor):
     def __init__(self):
         self.counts = {}
 
-    def process(self, path: str, target_split: str, netcdf_dataset: netCDF4.Dataset):
+    def process(self, path: Path, target_split: str, netcdf_dataset: netCDF4.Dataset):
         labels = xr.open_dataset(xr.backends.NetCDF4DataStore(netcdf_dataset['labels']))['labels'].values \
             .astype(LABEL_DTYPE)
 

@@ -14,11 +14,10 @@ class PatchVisualizer(PatchProcessor):
     Create a GPKG visualization of the patches in each split.
     """
 
-    def __init__(self, netcdf_path: Path):
-        self.netcdf_path = netcdf_path
+    def __init__(self):
         self.geo_dfs = []
 
-    def process(self, path: str, target_split: str, netcdf_dataset: netCDF4.Dataset):
+    def process(self, path: Path, target_split: str, netcdf_dataset: netCDF4.Dataset):
         crs = netcdf_dataset["labels"].variables["labels"].crs.removeprefix("+init=")
         transform = netcdf_dataset["labels"].variables["labels"].transform
         shape = netcdf_dataset["labels"].variables["labels"].shape
@@ -33,9 +32,12 @@ class PatchVisualizer(PatchProcessor):
 
         geo_df = gpd.GeoDataFrame(geometry=[polygon], crs=crs)
         geo_df["split"] = target_split
-        year, tile, _, patch_x, patch_y = Path(path).name.split("_")
+        year, tile, _, patch_x, patch_y = path.stem.split("_")
+        geo_df["path"] = path.as_posix()
         geo_df["year"] = int(year)
         geo_df["tile"] = tile
+        geo_df["patch_x"] = int(patch_x)
+        geo_df["patch_y"] = int(patch_y)
         geo_df.to_crs("EPSG:4326", inplace=True)
         self.geo_dfs.append(geo_df)
 
