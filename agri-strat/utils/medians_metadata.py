@@ -8,3 +8,4 @@ class MediansMetadata(DataClassJsonMixin):
     img_size: list[int]
     num_patches: int
     num_subpatches_per_patch: int = None
+    patch_size: list[int] = None

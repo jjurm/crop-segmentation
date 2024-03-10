@@ -184,7 +184,7 @@ def process_patch(out_path, data_path, bands, group_freq, output_size, semaphore
 
     netcdf.close()
 
-    return num_subpatches
+    return patch_size, num_subpatches
 
 
 def main():
@@ -233,15 +233,15 @@ def main():
 
             with tqdm(total=len(jobs)) as pbar:
                 pool = Pool(args.num_workers)
-                for num_subpatches in pool.imap_unordered(func, jobs):
+                for patch_size, num_subpatches in pool.imap_unordered(func, jobs):
 
-                    # Store the number of subpatches per patch (should be the same for all patches)
-                    if not metadata.num_subpatches_per_patch:
+                    if not metadata.patch_size:
+                        metadata.patch_size = patch_size
                         metadata.num_subpatches_per_patch = num_subpatches
                     else:
-                        assert metadata.num_subpatches_per_patch == num_subpatches, (
-                            f"Expected the same number of subpatches in each patch but got "
-                            f"{metadata.num_subpatches_per_patch} and {num_subpatches} for some patches")
+                        assert metadata.patch_size == patch_size, (
+                            f"Expected the same patch size for all patches but got "
+                            f"{metadata.patch_size} and {patch_size} for some patches")
 
                     # Update the progress bar
                     pbar.update(1)
