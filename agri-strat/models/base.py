@@ -163,13 +163,14 @@ class BaseModelModule(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
+        batch_size = inputs.shape[0]
         output = self.model(inputs)
         loss_nll = self.loss_nll(output, labels)
         loss_nll_parcel = self.loss_nll_parcel(output, labels)
         self.log('train/loss_nll', loss_nll,
-                 on_step=True, on_epoch=True, logger=True, prog_bar=not self.parcel_loss)
+                 on_step=True, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
         self.log('train/loss_nll_parcel', loss_nll_parcel,
-                 on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss)
+                 on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
 
         loss = loss_nll_parcel if self.parcel_loss else loss_nll
         if torch.isnan(loss):
@@ -187,6 +188,7 @@ class BaseModelModule(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
+        batch_size = inputs.shape[0]
         output = self.model(inputs)
 
         # Collect validation examples
@@ -202,9 +204,9 @@ class BaseModelModule(pl.LightningModule):
         loss_nll_parcel = self.loss_nll_parcel(output, labels)
         if not torch.isnan(loss_nll):
             self.log('val/loss_nll', loss_nll,
-                     on_step=False, on_epoch=True, logger=True, prog_bar=not self.parcel_loss)
+                     on_step=False, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
             self.log('val/loss_nll_parcel', loss_nll_parcel,
-                     on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss)
+                     on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
 
         acc = self.metric_acc(output, labels)
         f1w = self.metric_f1w(output, labels)
@@ -214,11 +216,11 @@ class BaseModelModule(pl.LightningModule):
         self.log_dict({
             'val/acc': acc,
             'val/f1w': f1w,
-        }, on_step=False, on_epoch=True, logger=True, prog_bar=not self.parcel_loss)
+        }, on_step=False, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
         self.log_dict({
             'val/acc_parcel': acc_parcel,
             'val/f1w_parcel': f1w_parcel
-        }, on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss)
+        }, on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
 
     def on_validation_epoch_end(self) -> None:
         confusion_matrix = self.confusion_matrix.compute()
