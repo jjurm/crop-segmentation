@@ -21,7 +21,6 @@ from utils.custom_progress_bar import CustomProgressBar
 from utils.custom_wandb_logger import CustomWandbLogger
 from utils.exception_tracker_callback import ExceptionTrackerCallback
 from utils.medians_datamodule import MediansDataModule
-from wandb import Settings
 
 
 def parse_arguments():
@@ -180,7 +179,6 @@ def main():
             tags=args.tags,
             resume="allow",
             config=config,
-            settings=Settings(_service_wait=60),
     ) as run:
         print("Creating datamodule, model, trainer...")
         datamodule = create_datamodule(config)
