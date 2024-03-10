@@ -103,6 +103,7 @@ class BaseModelModule(pl.LightningModule):
         self.model = get_model_class(model)(num_classes=self.num_classes, num_bands=len(bands), **kwargs)
 
         self.validation_examples = None
+        self.validation_patch_scores = None
 
     def _calculate_class_weights(self, class_counts: dict[any, int], parcel_loss):
         """
@@ -192,22 +193,12 @@ class BaseModelModule(pl.LightningModule):
             "labels": [],
             "outputs": [],
         }
+        self.validation_patch_scores = {}
 
     def validation_step(self, batch, batch_idx):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
         batch_size = inputs.shape[0]
         output = self.model(inputs)
-
-        # Collect validation examples
-        want_examples = NUM_VALIDATION_PATCH_EXAMPLES * self.medians_metadata.num_subpatches_per_patch
-        has_examples = len(self.validation_examples["inputs"])
-        if has_examples < want_examples:
-            self.validation_examples["patch"].extend(batch["patch_path"][:(want_examples - has_examples)])
-            self.validation_examples["subpatch"].extend(
-                batch["subpatch_id"][:(want_examples - has_examples)].cpu().detach().numpy())
-            self.validation_examples["inputs"].extend(inputs[:(want_examples - has_examples)].cpu().detach().numpy())
-            self.validation_examples["labels"].extend(labels[:(want_examples - has_examples)].cpu().detach().numpy())
-            self.validation_examples["outputs"].extend(output[:(want_examples - has_examples)].cpu().detach().numpy())
 
         loss_nll = self.loss_nll(output, labels)
         loss_nll_parcel = self.loss_nll_parcel(output, labels)
@@ -222,6 +213,10 @@ class BaseModelModule(pl.LightningModule):
         acc_parcel = self.metric_acc_parcel(output, labels)
         f1w_parcel = self.metric_f1w_parcel(output, labels)
         self.confusion_matrix.update(output, labels)
+
+        self._collect_per_patch_scores(batch, output)
+        self._collect_preview_samples(batch, output)
+
         self.log_dict({
             'val/acc': acc,
             'val/f1w': f1w,
@@ -231,19 +226,63 @@ class BaseModelModule(pl.LightningModule):
             'val/f1w_parcel': f1w_parcel
         }, on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
 
+    def _collect_per_patch_scores(self, batch, output):
+        for i, patch_path in enumerate(batch["patch_path"]):
+            if patch_path not in self.validation_patch_scores:
+                self.validation_patch_scores[patch_path] = {
+                    "acc": MulticlassAccuracy(num_classes=self.num_classes, average="macro").to(self.device),
+                    "acc_parcel": MulticlassAccuracy(num_classes=self.num_classes, average="macro", ignore_index=0).to(
+                        self.device),
+                    "f1w": MulticlassF1Score(num_classes=self.num_classes, average="weighted").to(self.device),
+                    "f1w_parcel": MulticlassF1Score(num_classes=self.num_classes, average="weighted",
+                                                    ignore_index=0).to(self.device),
+                    "n_pixels": 0,
+                }
+            scores = self.validation_patch_scores[patch_path]
+
+            n_pixels = int(
+                (batch["labels"][i] != 0).sum().item() if self.parcel_loss else batch["labels"][i].shape[0] *
+                                                                                batch["labels"][i].shape[1])
+            outputs_ = output[i].unsqueeze(0)
+            labels_ = batch["labels"][i].unsqueeze(0)
+            scores["acc"].update(outputs_, labels_)
+            scores["f1w"].update(outputs_, labels_)
+            scores["acc_parcel"].update(outputs_, labels_)
+            scores["f1w_parcel"].update(outputs_, labels_)
+            scores["n_pixels"] += n_pixels
+
+    def _collect_preview_samples(self, batch, output):
+        # Collect validation examples to show as images
+        want_examples = NUM_VALIDATION_PATCH_EXAMPLES * self.medians_metadata.num_subpatches_per_patch
+        has_examples = len(self.validation_examples["inputs"])
+        if has_examples < want_examples:
+            self.validation_examples["patch"].extend(batch["patch_path"][:(want_examples - has_examples)])
+            self.validation_examples["subpatch"].extend(
+                batch["subpatch_id"][:(want_examples - has_examples)].cpu().detach().numpy())
+            self.validation_examples["inputs"].extend(
+                batch["medians"][:(want_examples - has_examples)].cpu().detach().numpy())
+            self.validation_examples["labels"].extend(
+                batch["labels"][:(want_examples - has_examples)].cpu().detach().numpy())
+            self.validation_examples["outputs"].extend(
+                output[:(want_examples - has_examples)].cpu().detach().numpy())
+
     def on_validation_epoch_end(self) -> None:
         confusion_matrix = self.confusion_matrix.compute()
         wandb_cm = self._get_wandb_confusion_matrix(confusion_matrix)
-
-        examples_table, images = self._get_val_examples_and_table()
+        patch_scores_df = self._compute_per_patch_scores()
 
         if self.trainer.state.stage != "sanity_check":
+            examples_table, images = self._get_preview_table_and_samples()
             wandb.log({
                 "epoch": self.current_epoch,
                 "confusion_matrix": wandb_cm,
                 "examples": images,
                 "examples_table": examples_table,
+                "patch_scores": wandb.Table(dataframe=patch_scores_df),
             })
+
+        self.validation_examples = None
+        self.validation_patch_scores = None
 
     def _get_wandb_confusion_matrix(self, confusion_matrix):
         class_names = ["0"] + [name for _, name in SELECTED_CLASSES]
@@ -269,7 +308,17 @@ class BaseModelModule(pl.LightningModule):
             {"title": f"Confusion Matrix"},
         )
 
-    def _get_val_examples_and_table(self):
+    def _compute_per_patch_scores(self):
+        for patch_path, scores in self.validation_patch_scores.items():
+            scores["acc"] = scores["acc"].compute()
+            scores["f1w"] = scores["f1w"].compute()
+            scores["acc_parcel"] = scores["acc_parcel"].compute()
+            scores["f1w_parcel"] = scores["f1w_parcel"].compute()
+        patch_scores_df = pd.DataFrame.from_dict(self.validation_patch_scores, orient="index").reset_index()
+        patch_scores_df.to_csv(Path(wandb.run.dir) / "patch_scores.csv")
+        return patch_scores_df
+
+    def _get_preview_table_and_samples(self):
         # This should hold for all validation epochs with enough of examples
         # and only fail for cases like sanity check or a devtest run
         assert len(self.validation_examples[
@@ -361,6 +410,7 @@ class BaseModelModule(pl.LightningModule):
                 wandb.Image(pixels_scaled, caption=f"errors ({i_patch + 1})",
                             masks=error_mask),
             )
+
         return examples_table, images
 
     def on_test_epoch_end(self):
