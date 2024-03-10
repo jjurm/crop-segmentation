@@ -4,6 +4,7 @@ from pathlib import Path
 import lightning.pytorch as pl
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import torch
 import torch.nn as nn
@@ -16,6 +17,11 @@ from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, M
 from config import SELECTED_CLASSES
 from models.convstar import ConvSTAR
 from models.unet import UNet
+from utils.constants import IMG_SIZE
+from utils.medians_metadata import MediansMetadata
+
+NUM_VALIDATION_PATCH_EXAMPLES = 6
+CLASS_LABEL_IGNORED = 255
 
 
 def get_model_class(model):
@@ -37,6 +43,7 @@ class BaseModelModule(pl.LightningModule):
             monitor_metric: str,
             weighted_loss: bool,
             bands: list[str],
+            medians_metadata: MediansMetadata,
             parcel_loss=False,
             class_counts=None,
             crop_encoding=None,  # TODO remove if not needed in test stage
@@ -68,32 +75,32 @@ class BaseModelModule(pl.LightningModule):
         """
         super(BaseModelModule, self).__init__()
         self.save_hyperparameters(
-            ignore=["class_counts", "linear_encoder", "crop_encoding", "bands", "num_time_steps"])
+            ignore=["class_counts", "linear_encoder", "crop_encoding", "bands", "num_time_steps", "medians_metadata"])
 
         self.linear_encoder = linear_encoder
+        self.num_classes = len(set(linear_encoder.values()))
         self.learning_rate = learning_rate
         self.bands = bands
         self.parcel_loss = parcel_loss
         self.crop_encoding = crop_encoding
         self.checkpoint_epoch = checkpoint_epoch
-
-        num_classes = len(set(linear_encoder.values()))
+        self.medians_metadata = medians_metadata
 
         # Loss function
         class_weights = self._calculate_class_weights(class_counts, parcel_loss).cuda() if weighted_loss else None
 
         self.loss_nll = nn.NLLLoss(weight=class_weights)
         self.loss_nll_parcel = nn.NLLLoss(weight=class_weights, ignore_index=0)
-        self.metric_acc = MulticlassAccuracy(num_classes=num_classes, average="macro")
-        self.metric_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="macro", ignore_index=0)
-        self.metric_f1w = MulticlassF1Score(num_classes=num_classes, average="weighted")
-        self.metric_f1w_parcel = MulticlassF1Score(num_classes=num_classes, average="weighted", ignore_index=0)
-        self.confusion_matrix = MulticlassConfusionMatrix(num_classes=num_classes, normalize="none",
+        self.metric_acc = MulticlassAccuracy(num_classes=self.num_classes, average="macro")
+        self.metric_acc_parcel = MulticlassAccuracy(num_classes=self.num_classes, average="macro", ignore_index=0)
+        self.metric_f1w = MulticlassF1Score(num_classes=self.num_classes, average="weighted")
+        self.metric_f1w_parcel = MulticlassF1Score(num_classes=self.num_classes, average="weighted", ignore_index=0)
+        self.confusion_matrix = MulticlassConfusionMatrix(num_classes=self.num_classes, normalize="none",
                                                           ignore_index=0 if parcel_loss else None)
 
         self.run_dir = Path(wandb.run.dir)
 
-        self.model = get_model_class(model)(num_classes=num_classes, num_bands=len(bands), **kwargs)
+        self.model = get_model_class(model)(num_classes=self.num_classes, num_bands=len(bands), **kwargs)
 
         self.validation_examples = None
 
@@ -192,10 +199,12 @@ class BaseModelModule(pl.LightningModule):
         output = self.model(inputs)
 
         # Collect validation examples
-        has_examples, want_examples = len(self.validation_examples["inputs"]), 4
+        want_examples = NUM_VALIDATION_PATCH_EXAMPLES * self.medians_metadata.num_subpatches_per_patch
+        has_examples = len(self.validation_examples["inputs"])
         if has_examples < want_examples:
-            self.validation_examples["patch"].extend(batch["patch_path"][:(want_examples - has_examples)].cpu().detach().numpy())
-            self.validation_examples["subpatch"].extend(batch["subpatch_id"][:(want_examples - has_examples)].cpu().detach().numpy())
+            self.validation_examples["patch"].extend(batch["patch_path"][:(want_examples - has_examples)])
+            self.validation_examples["subpatch"].extend(
+                batch["subpatch_id"][:(want_examples - has_examples)].cpu().detach().numpy())
             self.validation_examples["inputs"].extend(inputs[:(want_examples - has_examples)].cpu().detach().numpy())
             self.validation_examples["labels"].extend(labels[:(want_examples - has_examples)].cpu().detach().numpy())
             self.validation_examples["outputs"].extend(output[:(want_examples - has_examples)].cpu().detach().numpy())
@@ -261,65 +270,96 @@ class BaseModelModule(pl.LightningModule):
         )
 
     def _get_val_examples_and_table(self):
-        examples_table = wandb.Table(columns=["patch", "subpatch", "inputs", "ground truth", "predictions"])
+        # This should hold for all validation epochs with enough of examples
+        # and only fail for cases like sanity check or a devtest run
+        assert len(self.validation_examples[
+                       "patch"]) == NUM_VALIDATION_PATCH_EXAMPLES * self.medians_metadata.num_subpatches_per_patch
+
+        examples_table = wandb.Table(columns=["patch", "inputs", "ground truth", "predictions", "errors"])
         rgb_band_indices = [self.bands.index(band) for band in ["B04", "B03", "B02"]]
         images = []
         class_labels = {0: "0"} | {self.linear_encoder[k]: v for k, v in SELECTED_CLASSES}
+        error_labels = {
+            0: "correct",
+            1: "incorrect",
+        }
+        if self.parcel_loss:
+            class_labels[CLASS_LABEL_IGNORED] = "ignored"
+            error_labels[CLASS_LABEL_IGNORED] = "ignored"
         class_set = [
             {"id": id_, "name": name}
             for id_, name in class_labels.items()
         ]
-        for i, (
-                patch,
-                subpatch,
-                inputs,  # (T, C, H, W)
-                labels,  # (H, W)
-                outputs,  # (P, H, W)
-        ) in enumerate(zip(
-            self.validation_examples["patch"],
-            self.validation_examples["subpatch"],
-            self.validation_examples["inputs"],
-            self.validation_examples["labels"],
-            self.validation_examples["outputs"],
-        )):
-            pixels = np.stack([
-                inputs[3, band_index, :, :]  # 3 is the time index
-                for band_index in rgb_band_indices
-            ], axis=-1)  # Channel should be last, i.e. (H, W, C)
-            pixels_scaled = np.floor(pixels * 256).clip(0, 255).astype(np.uint8)
+        pixels_dtype = self.validation_examples["inputs"][0].dtype
+        labels_dtype = self.validation_examples["labels"][0].dtype
+        predictions_dtype = self.validation_examples["outputs"][0].dtype
+        for i_patch in range(NUM_VALIDATION_PATCH_EXAMPLES):
+            # The following assumes that each patch has its 'num_subpatches_per_patch' subpatches in a sequence
+            # i.e. that the subpatches are not shuffled within a patch
+            patch = self.validation_examples["patch"][i_patch * self.medians_metadata.num_subpatches_per_patch]
+            patch_size = (self.medians_metadata.patch_size[0], self.medians_metadata.patch_size[1]) \
+                if self.medians_metadata.patch_size else (IMG_SIZE, IMG_SIZE)
+            pixels = np.zeros(patch_size + (3,), dtype=pixels_dtype)  # (H, W, C)
+            labels = np.zeros(patch_size, dtype=labels_dtype)  # (H, W)
+            predictions = np.zeros(patch_size, dtype=predictions_dtype)  # (H, W)
+
+            # Put together the image of the whole patch
+            y_rows = patch_size[1] // self.medians_metadata.img_size[1]
+            for i_subpatch in range(self.medians_metadata.num_subpatches_per_patch):
+                i_subpatch_in_examples = i_patch * self.medians_metadata.num_subpatches_per_patch + i_subpatch
+                # Shapes of variables:
+                #   inputs (T, C, H, W)
+                #   labels (H, W)
+                #   outputs (P, H, W)
+                inputs_subpatch = self.validation_examples["inputs"][i_subpatch_in_examples]
+                pixels_subpatch = np.stack([
+                    inputs_subpatch[3, band_index, :, :]  # 3 is the time index
+                    for band_index in rgb_band_indices
+                ], axis=-1)  # Channel should be last, i.e. (H, W, C)
+
+                low_x = (i_subpatch // y_rows) * self.medians_metadata.img_size[0]
+                high_x = low_x + self.medians_metadata.img_size[0]
+                low_y = (i_subpatch % y_rows) * self.medians_metadata.img_size[1]
+                high_y = low_y + self.medians_metadata.img_size[1]
+                pixels[low_x:high_x, low_y:high_y, :] = pixels_subpatch
+                labels[low_x:high_x, low_y:high_y] = self.validation_examples["labels"][i_subpatch_in_examples]
+                predictions[low_x:high_x, low_y:high_y] = self.validation_examples["outputs"][i_subpatch_in_examples] \
+                    .argmax(axis=0)
+
+            # Normalize the range of each image to [0,1]
+            pixels = pixels / np.max(pixels)
+            pixels_scaled = np.floor(pixels * 256).clip(0, 255)
             patch_name = Path(patch).stem
 
+            error_pixels = (labels != predictions).astype(int)
+            if self.parcel_loss:
+                predictions[labels == 0] = CLASS_LABEL_IGNORED  # 'ignored' class
+                error_pixels[labels == 0] = CLASS_LABEL_IGNORED  # 'ignored' class
             ground_truth_mask = {
-                "ground_truth": {
-                    "mask_data": labels,
-                    "class_labels": class_labels,
-                },
+                "ground_truth": dict(mask_data=labels, class_labels=class_labels)
             }
             prediction_mask = {
-                "prediction": {
-                    "mask_data": outputs.argmax(axis=0),
-                    "class_labels": class_labels,
-                },
+                "prediction": dict(mask_data=predictions, class_labels=class_labels)
+            }
+            error_mask = {
+                "error": dict(mask_data=error_pixels, class_labels=error_labels)
             }
             images.append(wandb.Image(
                 pixels_scaled,
-                caption=f"({i + 1}) {patch_name}/{subpatch}",
-                masks=ground_truth_mask | prediction_mask,
+                caption=f"({i_patch + 1}) {patch_name}",
+                masks=ground_truth_mask | prediction_mask | error_mask,
                 classes=class_set,
             ))
 
             examples_table.add_data(
                 patch_name,
-                subpatch,
-                wandb.Image(pixels_scaled, caption=f"inputs ({i + 1})"),
-                wandb.Image(
-                    pixels_scaled, caption=f"ground truth ({i + 1})",
-                    masks=ground_truth_mask,
-                ),
-                wandb.Image(
-                    pixels_scaled, caption=f"prediction ({i + 1})",
-                    masks=prediction_mask,
-                ),
+                wandb.Image(pixels_scaled, caption=f"inputs ({i_patch + 1})"),
+                wandb.Image(pixels_scaled, caption=f"ground truth ({i_patch + 1})",
+                            masks=ground_truth_mask),
+                wandb.Image(pixels_scaled, caption=f"prediction ({i_patch + 1})",
+                            masks=prediction_mask),
+                wandb.Image(pixels_scaled, caption=f"errors ({i_patch + 1})",
+                            masks=error_mask),
             )
         return examples_table, images
 

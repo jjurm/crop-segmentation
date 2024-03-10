@@ -142,6 +142,7 @@ def create_model(config, datamodule):
         linear_encoder=experiment_config.LINEAR_ENCODER,
         bands=datamodule.get_bands(),
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
+        medians_metadata=datamodule.metadata,
     )
     if wandb.run.resumed:
         # Load the model from the latest checkpoint
