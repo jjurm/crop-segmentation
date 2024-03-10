@@ -12,6 +12,7 @@ from pathlib import Path
 
 import lightning.pytorch as pl
 import torch
+from lightning import seed_everything
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import config as experiment_config
@@ -56,7 +57,8 @@ def parse_arguments():
     parser.add_argument('--split_artifact', type=str, required=True,
                         help='Wandb artifact of type \'split\' that references the train/val/test splits.')
     parser.add_argument('--bins_range', type=int, nargs=2, default=[4, 9], required=False,
-                        help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). Default: [4, 9].')
+                        help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). '
+                             'Default: [4, 9].')
 
     parser.add_argument('--num_epochs', type=int, default=10, required=False,
                         help='Number of epochs. Default 10')
@@ -66,8 +68,11 @@ def parse_arguments():
                         help='Starting learning rate. Default 1e-1')
     parser.add_argument('--requires_norm', action='store_true', default=False, required=False,
                         help='Normalize data to 0-1 range. Default False')
+
     parser.add_argument('--deterministic', action='store_true', default=False, required=False,
-                        help='Enforce reproducible results. Default False')
+                        help='Enforce reproducible results (except functions without a deterministic implementation). '
+                             'Default False')
+    parser.add_argument('--seed', type=int, default=0, required=False, )
 
     parser.add_argument('--num_workers', type=int, default=6, required=False,
                         help='Number of workers to work on dataloader. Default 6')
@@ -101,7 +106,9 @@ def get_config(args):
         'num_epochs': args.num_epochs,
         'learning_rate': args.lr,
         'requires_norm': args.requires_norm,
+
         'deterministic': args.deterministic,
+        'seed': args.seed,
 
         'num_workers': args.num_workers,
         'cache_dataset': args.cache_dataset,
@@ -170,6 +177,7 @@ def main():
     config = get_config(args)
 
     torch.set_float32_matmul_precision('medium')
+    seed_everything(config["seed"], workers=True)
 
     print("Intializing wandb run...")
 
@@ -215,7 +223,8 @@ def main():
             callbacks=callbacks,
             logger=logger,
             gradient_clip_val=10.0,
-            deterministic=config["deterministic"],
+            deterministic="warn" if config["deterministic"] else None,
+            benchmark=not config["deterministic"],
             fast_dev_run=config["devtest"],
             limit_train_batches=config["limit_train_batches"],
             limit_val_batches=config["limit_val_batches"],
