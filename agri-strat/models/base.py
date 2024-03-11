@@ -310,12 +310,13 @@ class BaseModelModule(pl.LightningModule):
 
     def _compute_per_patch_scores(self):
         for patch_path, scores in self.validation_patch_scores.items():
-            scores["acc"] = scores["acc"].compute()
-            scores["f1w"] = scores["f1w"].compute()
-            scores["acc_parcel"] = scores["acc_parcel"].compute()
-            scores["f1w_parcel"] = scores["f1w_parcel"].compute()
+            scores["acc"] = scores["acc"].compute().item()
+            scores["f1w"] = scores["f1w"].compute().item()
+            scores["acc_parcel"] = scores["acc_parcel"].compute().item()
+            scores["f1w_parcel"] = scores["f1w_parcel"].compute().item()
         patch_scores_df = pd.DataFrame.from_dict(self.validation_patch_scores, orient="index").reset_index()
-        patch_scores_df.to_csv(Path(wandb.run.dir) / "patch_scores.csv")
+        csv_file = self.run_dir / "patch_scores.csv"
+        patch_scores_df.to_csv(csv_file, index=False)
         return patch_scores_df
 
     def _get_preview_table_and_samples(self):

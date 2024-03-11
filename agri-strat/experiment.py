@@ -223,6 +223,8 @@ def main():
             callbacks=callbacks,
             logger=logger,
             gradient_clip_val=10.0,
+            # For ensuring determinism with nll_loss2d_forward_out_cuda_template,
+            # see https://discuss.pytorch.org/t/pytorchs-non-deterministic-cross-entropy-loss-and-the-problem-of-reproducibility/172180/9
             deterministic="warn" if config["deterministic"] else None,
             benchmark=not config["deterministic"],
             fast_dev_run=config["devtest"],
