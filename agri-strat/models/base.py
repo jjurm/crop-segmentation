@@ -152,6 +152,9 @@ class BaseModelModule(pl.LightningModule):
         if self.hparams.get("model") == "unet":
             lr_scheduler = ReduceLROnPlateau(
                 optimizer,
+                mode="max",
+                threshold=1e-3,
+                threshold_mode="rel",
                 factor=0.5,
                 patience=4,
             )
