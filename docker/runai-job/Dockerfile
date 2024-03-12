@@ -1,4 +1,3 @@
-#ARG ROOT_CONTAINER=ubuntu:22.04
 ARG ROOT_CONTAINER=nvidia/cuda:12.3.1-devel-ubuntu22.04
 
 FROM $ROOT_CONTAINER
@@ -68,8 +67,10 @@ SHELL ["/bin/bash", "-o", "pipefail", "-l", "-c"]
 ENV JUPYTER_PORT=8888
 EXPOSE $JUPYTER_PORT
 
+EXPOSE 22
+
 USER $NB_USER
 
 WORKDIR "$HOME"
 ENTRYPOINT ["tini", "-g", "--", "/bin/bash", "/entrypoint.sh"]
-CMD ["/bin/bash"]
+CMD ["sudo", "/usr/sbin/sshd", "-D"]

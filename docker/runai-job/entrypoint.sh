@@ -1,6 +1,8 @@
 #/bin/bash
 set -Eeo pipefail
-. $HOME/.profile
+if [ -f $HOME/.profile ]; then
+  . $HOME/.profile
+fi
 # Print NODE_NAME if set
 if [ -n "$NODE_NAME" ]; then
   echo "NODE_NAME: $NODE_NAME"
