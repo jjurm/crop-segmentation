@@ -2,11 +2,6 @@ ARG ROOT_CONTAINER=jjurm/runai-job
 FROM $ROOT_CONTAINER
 
 USER root
-ENV HOME=/workdir
-RUN mkdir -p "$HOME" && \
-    chown -R "$NB_UID:$NB_GID" "$HOME"
-WORKDIR "$HOME"
-ENV PATH="${PATH}:${HOME}/.local/bin"
 
 RUN apt-get update --yes && \
     apt-get install --yes --no-install-recommends \

@@ -38,7 +38,7 @@ RUN apt-get install --yes --no-install-recommends \
     mkdir -p /var/run/sshd && \
     update-alternatives --install /usr/bin/nano nano /bin/nano-tiny 10
 
-ARG HOME="/myhome"
+ARG HOME="/workdir"
 ENV SHELL=/bin/bash \
     NB_USER="${NB_USER}" \
     NB_UID=${NB_UID} \
@@ -46,7 +46,10 @@ ENV SHELL=/bin/bash \
     LC_ALL=en_US.UTF-8 \
     LANG=en_US.UTF-8 \
     LANGUAGE=en_US.UTF-8 \
-    HOME="${HOME}"
+    HOME="${HOME}" \
+    PATH="${PATH}:${HOME}/.local/bin"
+RUN mkdir -p "${HOME}" && \
+    chown -R "${NB_UID}:${NB_GID}" "${HOME}"
 
 RUN sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' /etc/skel/.bashrc
 
