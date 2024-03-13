@@ -175,7 +175,7 @@ def create_model(config, datamodule):
 def main():
     args = parse_arguments()
 
-    print("Intializing wandb run...")
+    print(f"Intializing wandb run... (cwd: {os.getcwd()})")
     with wandb.init(
             project="agri-strat",
             job_type=args.job_type,
