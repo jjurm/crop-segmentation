@@ -74,6 +74,10 @@ EXPOSE 22
 
 USER $NB_USER
 
+# Configure git
+RUN git config --global --add safe.directory '*'
+RUN git config --global credential.helper '!f() { echo username=jjurm; echo password="$GIT_TOKEN"; }; f'
+
 WORKDIR "$HOME"
 ENTRYPOINT ["tini", "-g", "--", "/bin/bash", "/entrypoint.sh"]
 CMD ["sudo", "/usr/sbin/sshd", "-D"]
