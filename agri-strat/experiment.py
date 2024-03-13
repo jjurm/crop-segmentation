@@ -41,7 +41,7 @@ def parse_arguments():
     parser.add_argument('--limit_batches', type=int, nargs="+", default=None, required=False,
                         help='Limit the number of batches to run during training and validation. Default None')
 
-    parser.add_argument('--model', type=str, required=True,
+    parser.add_argument('--model', type=str, default="unet", required=False,
                         choices=['unet', 'convstar'],
                         help='Model to use. One of [\'unet\', \'convstar\']')
 
@@ -50,11 +50,11 @@ def parse_arguments():
     parser.add_argument('--weighted_loss', action='store_true', default=False, required=False,
                         help='Use a weighted loss function with precalculated weights per class. Default False.')
 
-    parser.add_argument('--medians_artifact', type=str, required=True,
+    parser.add_argument('--medians_artifact', type=str, default="1MS_B02B03B04B08_61x61:latest", required=False,
                         help='Wandb artifact of type \'medians\' that references precomputed medians.')
     parser.add_argument('--medians_path', type=str, default='dataset/medians', required=False,
                         help='Path to the directory with subdirectories of medians. Default dataset/medians')
-    parser.add_argument('--split_artifact', type=str, required=True,
+    parser.add_argument('--split_artifact', type=str, default="s4a_naive_split:latest", required=False,
                         help='Wandb artifact of type \'split\' that references the train/val/test splits.')
     parser.add_argument('--bins_range', type=int, nargs=2, default=[4, 9], required=False,
                         help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). '
