@@ -21,7 +21,6 @@ from tqdm import tqdm
 
 import wandb
 from utils.constants import BANDS, IMG_SIZE, REFERENCE_BAND, MEDIANS_DTYPE, LABEL_DTYPE
-from utils.medians import get_medians_subpatch_path
 from utils.medians_metadata import MediansMetadata
 
 
@@ -96,9 +95,6 @@ def sliding_window_view(arr, window_shape, steps):
 
 def process_patch(out_path, data_path, bands, group_freq, output_size, semaphore_read, semaphore_write,
                   patch_relative_path):
-    patch_dir = out_path / patch_relative_path
-    patch_dir.mkdir(exist_ok=False, parents=True)
-
     # Calculate medians
     with semaphore_read:
         netcdf = netCDF4.Dataset(data_path / patch_relative_path, 'r')
@@ -176,13 +172,12 @@ def process_patch(out_path, data_path, bands, group_freq, output_size, semaphore
 
     # Save medians and labels
     num_subpatches = medians_subpatches.shape[0] * medians_subpatches.shape[1]
+    target_filename = out_path / (str(patch_relative_path) + ".npz")
     with semaphore_write:
-        for i in range(medians_subpatches.shape[0]):
-            for j in range(medians_subpatches.shape[1]):
-                sub_idx = i * medians_subpatches.shape[1] + j
-                np.save(get_medians_subpatch_path(patch_dir, sub_idx, num_subpatches),
-                        medians_subpatches[i, j, :, :, :, :])
-                np.save(get_medians_subpatch_path(patch_dir, sub_idx, num_subpatches, labels=True), labels[i, j, :, :])
+        target_filename.parent.mkdir(exist_ok=True, parents=True)
+        np.savez(target_filename,
+                 medians=medians_subpatches,
+                 labels=labels)
 
     netcdf.close()
 
