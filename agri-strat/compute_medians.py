@@ -36,7 +36,7 @@ def parse_arguments():
                         help='The frequency to aggregate medians with. Default "1MS".')
     parser.add_argument('--bands', nargs='+', default=BANDS.keys(), required=False,
                         help='The bands to use. Default all.')
-    parser.add_argument('--output_size', nargs='+', type=int, default=[IMG_SIZE, IMG_SIZE], required=False,
+    parser.add_argument('--output_size', nargs=2, type=int, default=[IMG_SIZE, IMG_SIZE], required=False,
                         help='The size of the medians (height, width). If none given, the output will be of the same '
                              'size.')
 
@@ -188,51 +188,47 @@ def process_patch(out_path, data_path, bands, group_freq, output_size, semaphore
 
 
 def main():
-    args = parse_arguments()
-    if args.output_size and len(args.output_size) != 2:
-        raise ValueError(f"Output size must be a tuple of 2 integers. Got {args.output_size}")
-
     with wandb.init(
             project='agri-strat',
             job_type='compute-medians',
-            config=vars(args),
+            config=vars(parse_arguments()),
     ) as run:
-        if args.limit_patches is not None:
+        if run.config["limit_patches"] is not None:
             run.tags = run.tags + ("devtest",)
 
         print("Listing patches...")
-        netcdf_path = Path(args.netcdf_path)
+        netcdf_path = Path(run.config["netcdf_path"])
         jobs = []
         patches_generator = netcdf_path.glob('**/*.nc')
-        if args.limit_patches is not None:
-            patches_generator = itertools.islice(patches_generator, args.limit_patches)
+        if run.config["limit_patches"] is not None:
+            patches_generator = itertools.islice(patches_generator, run.config["limit_patches"])
         for patch_path in patches_generator:
             jobs.append(patch_path.relative_to(netcdf_path))
 
         metadata = MediansMetadata(
-            bands=sorted(args.bands),
-            img_size=args.output_size,
+            bands=sorted(run.config["bands"]),
+            img_size=run.config["output_size"],
             num_patches=len(jobs),
         )
 
         print("Computing medians...")
         with Manager() as manager:
-            semaphore_read = manager.Semaphore(args.num_readers)
-            semaphore_write = manager.Semaphore(args.num_writers)
+            semaphore_read = manager.Semaphore(run.config["num_readers"])
+            semaphore_write = manager.Semaphore(run.config["num_writers"])
 
             run_name_short_hash = hashlib.sha1(run.id.encode("utf-8")).hexdigest()[-6:]
-            medians_name = f"{args.group_freq}_{''.join(args.bands)}_{args.output_size[0]}x{args.output_size[1]}"
+            medians_name = f"{run.config['group_freq']}_{''.join(run.config['bands'])}_{run.config['output_size'][0]}x{run.config['output_size'][1]}"
             medians_dir_name = f"{medians_name}-{run_name_short_hash}"
-            out_path = Path(args.medians_path) / medians_dir_name
+            out_path = Path(run.config["medians_path"]) / medians_dir_name
             out_path.mkdir(exist_ok=False, parents=True)
 
             # Process patches in parallel
             func = partial(process_patch,
-                           out_path, netcdf_path, metadata.bands, args.group_freq, args.output_size,
+                           out_path, netcdf_path, metadata.bands, run.config["group_freq"], run.config["output_size"],
                            semaphore_read, semaphore_write)
 
             with tqdm(total=len(jobs)) as pbar:
-                pool = Pool(args.num_workers)
+                pool = Pool(run.config["num_workers"])
                 for patch_size, num_subpatches in pool.imap_unordered(func, jobs):
 
                     if not metadata.patch_size:
@@ -256,7 +252,8 @@ def main():
             name=medians_name,
             type="medians",
             metadata={
-                "medians_path": args.medians_path,  # Consumer scripts should receive path as arg instead of using this
+                "medians_path": run.config["medians_path"],
+                # Consumer scripts should receive path as arg instead of using this
                 "medians_dir_name": medians_dir_name,
                 "num_patches": len(jobs),
             },

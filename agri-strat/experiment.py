@@ -174,24 +174,23 @@ def create_model(config, datamodule):
 
 def main():
     args = parse_arguments()
-    config = get_config(args)
-
-    torch.set_float32_matmul_precision('medium')
-    seed_everything(config["seed"], workers=True)
 
     print("Intializing wandb run...")
-
     with wandb.init(
             project="agri-strat",
             job_type=args.job_type,
             notes=args.notes,
             tags=args.tags,
             resume="allow",
-            config=config,
+            config=get_config(args),
+            settings=wandb.Settings(job_name="train1"),
     ) as run:
+        torch.set_float32_matmul_precision('medium')
+        seed_everything(run.config["seed"], workers=True)
+
         print("Creating datamodule, model, trainer...")
-        datamodule = create_datamodule(config)
-        model = create_model(config, datamodule)
+        datamodule = create_datamodule(run.config)
+        model = create_model(run.config, datamodule)
 
         callbacks = [
             ExceptionTrackerCallback(),
@@ -199,7 +198,7 @@ def main():
             ModelCheckpoint(
                 dirpath=Path(wandb.run.dir) / "checkpoints",
                 filename='ckpt_epoch={epoch:02d}',
-                monitor=config["monitor_metric"],
+                monitor=run.config["monitor_metric"],
                 save_last='link',
                 save_top_k=-1,
                 mode='max',
@@ -215,9 +214,9 @@ def main():
 
         trainer = pl.Trainer(
             accelerator="auto",
-            devices=config["num_gpus"],
-            num_nodes=config["num_nodes"],
-            max_epochs=config["num_epochs"],
+            devices=run.config["num_gpus"],
+            num_nodes=run.config["num_nodes"],
+            max_epochs=run.config["num_epochs"],
             check_val_every_n_epoch=1,
             precision='32-true',
             callbacks=callbacks,
@@ -225,11 +224,11 @@ def main():
             gradient_clip_val=10.0,
             # For ensuring determinism with nll_loss2d_forward_out_cuda_template,
             # see https://discuss.pytorch.org/t/pytorchs-non-deterministic-cross-entropy-loss-and-the-problem-of-reproducibility/172180/9
-            deterministic="warn" if config["deterministic"] else None,
-            benchmark=not config["deterministic"],
-            fast_dev_run=config["devtest"],
-            limit_train_batches=config["limit_train_batches"],
-            limit_val_batches=config["limit_val_batches"],
+            deterministic="warn" if run.config["deterministic"] else None,
+            benchmark=not run.config["deterministic"],
+            fast_dev_run=run.config["devtest"],
+            limit_train_batches=run.config["limit_train_batches"],
+            limit_val_batches=run.config["limit_val_batches"],
             num_sanity_val_steps=2,
             # profiler='simple',
         )

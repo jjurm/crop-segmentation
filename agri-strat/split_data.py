@@ -40,13 +40,13 @@ def parse_arguments():
 
 
 def create_artifact(
-        args,
+        config,
         split_rules_name: str | None,
         split_df: pd.DataFrame,
         patch_processors: list[PatchProcessor],
 ):
     print("Creating artifact...")
-    artifact_name_prefix = args.artifact_name_prefix or split_rules_name
+    artifact_name_prefix = config["artifact_name_prefix"] or split_rules_name
     artifact = wandb.Artifact(
         name=f"{artifact_name_prefix}_split",
         type="split",
@@ -76,30 +76,29 @@ def create_artifact(
 
 
 def main():
-    args = parse_arguments()
-    np.random.seed(args.seed)
-
     with wandb.init(
             project='agri-strat',
             job_type='generate-split',
-            config=vars(args),
+            config=vars(parse_arguments()),
     ) as run:
-        if args.split_rules_artifact is not None and args.coco_path_prefix is not None:
+        np.random.seed(run.config['seed'])
+
+        if run.config["split_rules_artifact"] is not None and run.config["coco_path_prefix"] is not None:
             raise ValueError("Only one of split_rules_artifact or coco_path_prefix can be provided.")
 
-        netcdf_path = Path(args.netcdf_path)
+        netcdf_path = Path(run.config['netcdf_path'])
 
-        if args.split_rules_artifact is not None:
+        if run.config["split_rules_artifact"] is not None:
             patch_paths = [
                 patch_path.relative_to(netcdf_path)
                 for patch_path in sorted(list(netcdf_path.glob('**/*.nc')))
             ]
-            if args.limit_patches is not None:
-                patch_paths = patch_paths[:args.limit_patches]
+            if run.config["limit_patches"] is not None:
+                patch_paths = patch_paths[:run.config["limit_patches"]]
                 run.tags = run.tags + ("devtest",)
-            split_df, split_rules_name = split_by_split_rules(args.split_rules_artifact, patch_paths)
-        elif args.coco_path_prefix is not None:
-            split_df, split_rules_name = split_by_coco_files(args.coco_path_prefix)
+            split_df, split_rules_name = split_by_split_rules(run.config["split_rules_artifact"], patch_paths)
+        elif run.config["coco_path_prefix"] is not None:
+            split_df, split_rules_name = split_by_coco_files(run.config["coco_path_prefix"])
         else:
             raise ValueError("Either split_rules_artifact or coco_path_prefix must be provided.")
 
@@ -116,11 +115,11 @@ def main():
                             patch_processor.process(Path(row["path"]), target, dataset)
                     pbar.update(1)
 
-        if args.shuffle:
+        if run.config["shuffle"]:
             split_df = split_df.sample(frac=1).reset_index(drop=True)
 
         # Create a wandb artifact
-        create_artifact(args, split_rules_name, split_df, patch_processors)
+        create_artifact(run.config, split_rules_name, split_df, patch_processors)
 
 
 if __name__ == '__main__':
