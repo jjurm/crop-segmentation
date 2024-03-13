@@ -52,8 +52,9 @@ def parse_arguments():
 
     parser.add_argument('--medians_artifact', type=str, default="1MS_B02B03B04B08_61x61:latest", required=False,
                         help='Wandb artifact of type \'medians\' that references precomputed medians.')
-    parser.add_argument('--medians_path', type=str, default='dataset/medians', required=False,
-                        help='Path to the directory with subdirectories of medians. Default dataset/medians')
+    parser.add_argument('--medians_path', type=str, default=None, required=False,
+                        help='Path to the directory with subdirectories of medians. Defaults to $MEDIANS_PATH or '
+                             'dataset/medians.')
     parser.add_argument('--split_artifact', type=str, default="s4a_naive_split:latest", required=False,
                         help='Wandb artifact of type \'split\' that references the train/val/test splits.')
     parser.add_argument('--bins_range', type=int, nargs=2, default=[4, 9], required=False,
@@ -129,7 +130,7 @@ def get_tags(args, config):
 def create_datamodule(config):
     datamodule = MediansDataModule(
         medians_artifact=config["medians_artifact"],
-        medians_path=config["medians_path"],
+        medians_path=config["medians_path"] or os.getenv("MEDIANS_PATH", "dataset/medians"),
         split_artifact=config["split_artifact"],
         bins_range=config["bins_range"],
         linear_encoder=experiment_config.LINEAR_ENCODER,

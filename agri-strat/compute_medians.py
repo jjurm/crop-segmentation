@@ -7,6 +7,7 @@ for each subpatch of the netCDF files, and the subpatches (and the labels) are s
 import argparse
 import hashlib
 import itertools
+import os
 from functools import partial
 from multiprocessing import Pool, Manager
 from pathlib import Path
@@ -29,8 +30,9 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--netcdf_path', type=str, default='dataset/netcdf', required=False,
                         help='Path to the netCDF files. Default "dataset/netcdf".')
-    parser.add_argument('--medians_path', type=str, default='dataset/medians', required=False,
-                        help='Where to write the medians, a subdirectory will be created. Default "dataset/medians".')
+    parser.add_argument('--medians_path', type=str, default=None, required=False,
+                        help='Path to the directory with subdirectories of medians. Defaults to $MEDIANS_PATH or '
+                             'dataset/medians.')
 
     parser.add_argument('--group_freq', type=str, default='1MS', required=False,
                         help='The frequency to aggregate medians with. Default "1MS".')
@@ -198,6 +200,7 @@ def main():
 
         print("Listing patches...")
         netcdf_path = Path(run.config["netcdf_path"])
+        medians_path = os.environ.get("MEDIANS_PATH", "dataset/medians")
         jobs = []
         patches_generator = netcdf_path.glob('**/*.nc')
         if run.config["limit_patches"] is not None:
@@ -219,7 +222,7 @@ def main():
             run_name_short_hash = hashlib.sha1(run.id.encode("utf-8")).hexdigest()[-6:]
             medians_name = f"{run.config['group_freq']}_{''.join(run.config['bands'])}_{run.config['output_size'][0]}x{run.config['output_size'][1]}"
             medians_dir_name = f"{medians_name}-{run_name_short_hash}"
-            out_path = Path(run.config["medians_path"]) / medians_dir_name
+            out_path = Path(medians_path) / medians_dir_name
             out_path.mkdir(exist_ok=False, parents=True)
 
             # Process patches in parallel
@@ -252,7 +255,7 @@ def main():
             name=medians_name,
             type="medians",
             metadata={
-                "medians_path": run.config["medians_path"],
+                "medians_path": medians_path,
                 # Consumer scripts should receive path as arg instead of using this
                 "medians_dir_name": medians_dir_name,
                 "num_patches": len(jobs),
