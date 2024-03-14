@@ -121,7 +121,6 @@ def get_config(args):
         'cache_dataset': args.cache_dataset,
         'num_gpus': args.num_gpus,
         'num_nodes': args.num_nodes,
-        'node_name': os.environ.get('NODE_NAME', None),
     }
     return config
 
@@ -195,6 +194,7 @@ def main():
             settings=wandb.Settings(job_name="train1"),
     ) as run:
         run.config.update({"monitor_metric": 'val/f1w_parcel' if run.config["parcel_loss"] else 'val/f1w'})
+        run.summary["node_name"] = os.environ.get('NODE_NAME', None)
 
         torch.set_float32_matmul_precision('medium')
         seed_everything(run.config["seed"], workers=True)

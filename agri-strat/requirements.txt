@@ -24,3 +24,4 @@ rasterio
 shapely
 geopandas
 torcheval
+cryptography
