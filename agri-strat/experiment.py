@@ -49,6 +49,9 @@ def parse_arguments():
                         help='Use a loss function that takes into account parcel pixels only.')
     parser.add_argument('--weighted_loss', action='store_true', default=False, required=False,
                         help='Use a weighted loss function with precalculated weights per class. Default False.')
+    parser.add_argument('--class_weights_weight', type=float, default=1.0, required=False,
+                        help='Weight of the class weights in the loss function, interpolating between calculated '
+                             'class weights and uniform weights. Default 1.0 = use calculated class weights.')
 
     parser.add_argument('--medians_artifact', type=str, default="1MS_B02B03B04B08_61x61:latest", required=False,
                         help='Wandb artifact of type \'medians\' that references precomputed medians.')
@@ -104,6 +107,7 @@ def get_config(args):
 
         'parcel_loss': args.parcel_loss,
         'weighted_loss': args.weighted_loss,
+        'class_weights_weight': args.class_weights_weight,
         'batch_size': args.batch_size,
         'num_epochs': args.num_epochs,
         'learning_rate': args.learning_rate,
@@ -167,6 +171,7 @@ def create_model(config, datamodule):
         # Create a new model
         return BaseModelModule(
             weighted_loss=config["weighted_loss"],
+            class_weights_weight=config["class_weights_weight"],
             model=config["model"],
             parcel_loss=config["parcel_loss"],
             monitor_metric=config["monitor_metric"],

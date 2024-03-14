@@ -42,6 +42,7 @@ class BaseModelModule(pl.LightningModule):
             learning_rate,
             monitor_metric: str,
             weighted_loss: bool,
+            class_weights_weight: float, # interpolate between class weights and uniform weights
             bands: list[str],
             medians_metadata: MediansMetadata,
             parcel_loss=False,
@@ -87,7 +88,11 @@ class BaseModelModule(pl.LightningModule):
         self.medians_metadata = medians_metadata
 
         # Loss function
-        class_weights = self._calculate_class_weights(class_counts, parcel_loss).cuda() if weighted_loss else None
+        if weighted_loss:
+            class_weights = class_weights_weight * self._calculate_class_weights(class_counts, parcel_loss).cuda() + \
+                            (1 - class_weights_weight) * torch.ones(self.num_classes).cuda()
+        else:
+            class_weights = None
 
         self.loss_nll = nn.NLLLoss(weight=class_weights)
         self.loss_nll_parcel = nn.NLLLoss(weight=class_weights, ignore_index=0)
