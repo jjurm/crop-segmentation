@@ -191,7 +191,6 @@ class BaseModelModule(pl.LightningModule):
     def on_validation_epoch_start(self) -> None:
         self.validation_examples = {
             "patch": [],
-            "subpatch": [],
             "inputs": [],
             "labels": [],
             "outputs": [],
@@ -260,8 +259,6 @@ class BaseModelModule(pl.LightningModule):
         has_examples = len(self.validation_examples["inputs"])
         if has_examples < want_examples:
             self.validation_examples["patch"].extend(batch["patch_path"][:(want_examples - has_examples)])
-            self.validation_examples["subpatch"].extend(
-                batch["subpatch_id"][:(want_examples - has_examples)].cpu().detach().numpy())
             self.validation_examples["inputs"].extend(
                 batch["medians"][:(want_examples - has_examples)].cpu().detach().numpy())
             self.validation_examples["labels"].extend(

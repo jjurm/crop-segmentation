@@ -16,7 +16,7 @@ class CustomWandbLogger(WandbLogger):
         super().__init__(**kwargs)
         assert self._checkpoint_name is not None, "The checkpoint name must be set."
 
-        self._custom_wandb_api = wandb.Api()
+        self._custom_wandb_api = wandb.Api(overrides={"project": self.experiment.project})
 
     def after_save_checkpoint(self, checkpoint_callback: ModelCheckpoint) -> None:
         super().after_save_checkpoint(checkpoint_callback)
