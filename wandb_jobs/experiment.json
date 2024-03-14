@@ -1,0 +1,20 @@
+{
+  "overrides": {
+    "args": [],
+    "run_config": {
+      "job_type": "train",
+      "model": "unet",
+      "parcel_loss": true,
+      "weighted_loss": true,
+      "medians_artifact": "1MS_B02B03B04B08_61x61:latest",
+      "split_artifact": "exp1_patches5000_strat_coco_split:latest",
+      "bins_range": [4, 9],
+      "num_epochs": 40,
+      "batch_size": 32,
+      "lr": "1e-1",
+      "requires_norm": true,
+      "num_workers": 16
+    },
+    "entry_point": []
+  }
+}
