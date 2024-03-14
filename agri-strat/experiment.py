@@ -103,7 +103,6 @@ def get_config(args):
         'bins_range': args.bins_range,
 
         'parcel_loss': args.parcel_loss,
-        'monitor_metric': 'val/f1w_parcel' if args.parcel_loss else 'val/f1w',
         'weighted_loss': args.weighted_loss,
         'batch_size': args.batch_size,
         'num_epochs': args.num_epochs,
@@ -190,6 +189,8 @@ def main():
             config=get_config(args),
             settings=wandb.Settings(job_name="train1"),
     ) as run:
+        run.config['monitor_metric'] = 'val/f1w_parcel' if args.parcel_loss else 'val/f1w',
+
         torch.set_float32_matmul_precision('medium')
         seed_everything(run.config["seed"], workers=True)
 
