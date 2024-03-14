@@ -74,6 +74,8 @@ def parse_arguments():
                         help='Enforce reproducible results (except functions without a deterministic implementation). '
                              'Default False')
     parser.add_argument('--seed', type=int, default=0, required=False, )
+    parser.add_argument('--shuffle_buffer_num_patches', type=int, default=100, required=False,
+                        help='Size of the buffer for shuffling subpatches, given in number of patches. Default 100.')
 
     parser.add_argument('--num_workers', type=int, default=6, required=False,
                         help='Number of workers to work on dataloader. Default 6')
@@ -110,6 +112,7 @@ def get_config(args):
 
         'deterministic': args.deterministic,
         'seed': args.seed,
+        'shuffle_buffer_num_patches': args.shuffle_buffer_num_patches,
 
         'num_workers': args.num_workers,
         'cache_dataset': args.cache_dataset,
@@ -138,6 +141,7 @@ def create_datamodule(config):
         batch_size=config["batch_size"],
         num_workers=config["num_workers"],
         cache_dataset=config["cache_dataset"],
+        shuffle_buffer_num_patches=config["shuffle_buffer_num_patches"],
     )
     datamodule.prepare_data()
     datamodule.setup('fit')

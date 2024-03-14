@@ -4,10 +4,27 @@ import lightning.pytorch as pl
 import pandas as pd
 import wandb
 from torch.utils.data import DataLoader
+from torch.utils.data.datapipes.iter.utils import IterableWrapperIterDataPipe
 
-from utils.cached_dataset import CachedMediansDataset
 from utils.medians_dataset import MediansDataset
 from utils.medians_metadata import MediansMetadata
+
+# TODO consider using the following function to have
+# - different seed for each epoch
+# - reproducibility even if loading from a checkpoing (need to plug in the epoch number)
+# def worker_init_fn(id, split_seed: int):
+#     # Recommended by NumPy Rng Author: https://github.com/pytorch/pytorch/issues/5059#issuecomment-817392562
+#     # Another good resource: https://tanelp.github.io/posts/a-bug-that-plagues-thousands-of-open-source-ml-projects/
+#     process_seed = torch.initial_seed()
+#     # Back out the base_seed so we can use all the bits.
+#     base_seed = process_seed - id
+#     # TODO: split_seed seems to have no impact.
+#     ss = np.random.SeedSequence(
+#         [id, base_seed, split_seed]
+#     )  # Rylan added split seed.
+#     # More than 128 bits (4 32-bit words) would be overkill.
+#     np_rng_seed = ss.generate_state(4)
+#     np.random.seed(np_rng_seed)
 
 
 class MediansDataModule(pl.LightningDataModule):
@@ -22,6 +39,7 @@ class MediansDataModule(pl.LightningDataModule):
             batch_size: int,
             num_workers: int,
             cache_dataset: bool,
+            shuffle_buffer_num_patches: int,
     ):
         super().__init__()
 
@@ -31,10 +49,12 @@ class MediansDataModule(pl.LightningDataModule):
         self.bins_range = bins_range
         self.linear_encoder = linear_encoder
         self.requires_norm = requires_norm
+        self.batch_size = batch_size
         self.cache_dataset = cache_dataset
+        self.shuffle_buffer_num_patches = shuffle_buffer_num_patches
 
         self.dataloader_args = {
-            'batch_size': batch_size,
+            'batch_size': None,
             'num_workers': num_workers,
             'pin_memory': True,
             'persistent_workers': True,
@@ -74,7 +94,6 @@ class MediansDataModule(pl.LightningDataModule):
             self.metadata = MediansMetadata.from_json(f.read())
 
         common_config = {
-            'use_cache': self.cache_dataset,
             'medians_subdir': self.medians_subdir,
             'medians_metadata': self.metadata,
             'bins_range': self.bins_range,
@@ -83,27 +102,42 @@ class MediansDataModule(pl.LightningDataModule):
         }
 
         if stage == 'fit':
-            self.dataset_train = CachedMediansDataset(split_file=(self.splits_dir / "train.txt"),
-                                                      patch_count=self.patch_counts["train"],
-                                                      **common_config)
-            self.dataset_val = CachedMediansDataset(split_file=(self.splits_dir / "val.txt"),
-                                                    patch_count=self.patch_counts["val"],
-                                                    **common_config)
+            self.dataset_train = MediansDataset(split_file=(self.splits_dir / "train.txt"),
+                                                patch_count=self.patch_counts["train"],
+                                                shuffle=True, batched=False,
+                                                **common_config)
+            self.dataset_val = MediansDataset(split_file=(self.splits_dir / "val.txt"),
+                                              patch_count=self.patch_counts["val"],
+                                              batched=True,
+                                              **common_config)
         elif stage == 'test':
             self.dataset_test = MediansDataset(split_file=(self.splits_dir / "test.txt"),
                                                patch_count=self.patch_counts["test"],
+                                               batched=True,
                                                **common_config)
         else:
             raise ValueError(f"stage = {stage}, expected: 'fit' or 'test'")
 
     def train_dataloader(self):
-        return DataLoader(self.dataset_train, shuffle=True, **self.dataloader_args)
+        dataloader = DataLoader(self.dataset_train, prefetch_factor=2*self.batch_size, **self.dataloader_args)
+        pipe = IterableWrapperIterDataPipe(dataloader, deepcopy=False) \
+            .shuffle(buffer_size=self.shuffle_buffer_num_patches * self.metadata.num_subpatches_per_patch) \
+            .batch(batch_size=self.batch_size).collate()
+        return pipe
 
     def val_dataloader(self):
-        return DataLoader(self.dataset_val, shuffle=False, **self.dataloader_args)
+        dataloader = DataLoader(self.dataset_val, **self.dataloader_args)
+        pipe = IterableWrapperIterDataPipe(dataloader, deepcopy=False) \
+            .unbatch() \
+            .batch(batch_size=self.batch_size).collate()
+        return pipe
 
     def test_dataloader(self):
-        return DataLoader(self.dataset_test, shuffle=False, **self.dataloader_args)
+        dataloader = DataLoader(self.dataset_test, **self.dataloader_args)
+        pipe = IterableWrapperIterDataPipe(dataloader, deepcopy=False) \
+            .unbatch() \
+            .batch(batch_size=self.batch_size).collate()
+        return pipe
 
     def get_bands(self) -> list[str]:
         """
