@@ -161,23 +161,26 @@ def create_model(config, datamodule):
     if wandb.run.resumed:
         # Load the model from the latest checkpoint
         checkpoint_path = Path(wandb.run.dir) / "checkpoints" / "last.ckpt"
-        print(f"Resuming model, loading from checkpoint {checkpoint_path}")
-        return BaseModelModule.load_from_checkpoint(
-            checkpoint_path=checkpoint_path,
-            **unsaved_params,
-        )
-    else:
-        # Create a new model
-        return BaseModelModule(
-            weighted_loss=config["weighted_loss"],
-            class_weights_weight=config["class_weights_weight"],
-            model=config["model"],
-            parcel_loss=config["parcel_loss"],
-            monitor_metric=config["monitor_metric"],
-            num_layers=3,
-            learning_rate=config["learning_rate"],
-            **unsaved_params,
-        )
+        if checkpoint_path.exists():
+            print(f"Resuming model, loading from checkpoint {checkpoint_path}")
+            return BaseModelModule.load_from_checkpoint(
+                checkpoint_path=checkpoint_path,
+                **unsaved_params,
+            )
+        else:
+            print("Resuming a wandb run, but no checkpoint found. Creating a new model.")
+
+    # Create a new model
+    return BaseModelModule(
+        weighted_loss=config["weighted_loss"],
+        class_weights_weight=config["class_weights_weight"],
+        model=config["model"],
+        parcel_loss=config["parcel_loss"],
+        monitor_metric=config["monitor_metric"],
+        num_layers=3,
+        learning_rate=config["learning_rate"],
+        **unsaved_params,
+    )
 
 
 def main():
