@@ -65,7 +65,7 @@ def parse_arguments():
                         help='Number of epochs. Default 10')
     parser.add_argument('--batch_size', type=int, default=4, required=False,
                         help='The batch size. Default 4')
-    parser.add_argument('--lr', type=float, default=1e-1, required=False,
+    parser.add_argument('--learning_rate', type=float, default=1e-1, required=False,
                         help='Starting learning rate. Default 1e-1')
     parser.add_argument('--requires_norm', action='store_true', default=False, required=False,
                         help='Normalize data to 0-1 range. Default False')
@@ -107,7 +107,7 @@ def get_config(args):
         'weighted_loss': args.weighted_loss,
         'batch_size': args.batch_size,
         'num_epochs': args.num_epochs,
-        'learning_rate': args.lr,
+        'learning_rate': args.learning_rate,
         'requires_norm': args.requires_norm,
 
         'deterministic': args.deterministic,

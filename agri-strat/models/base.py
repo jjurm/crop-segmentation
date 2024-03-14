@@ -381,6 +381,7 @@ class BaseModelModule(pl.LightningModule):
             pixels_scaled = np.floor(pixels * 256).clip(0, 255)
             patch_name = Path(patch).stem
 
+            # noinspection PyUnresolvedReferences
             error_pixels = (labels != predictions).astype(int)
             if self.parcel_loss:
                 predictions[labels == 0] = CLASS_LABEL_IGNORED  # 'ignored' class

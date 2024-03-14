@@ -71,7 +71,7 @@ python experiment.py \
   --bins_range 4 9 \
   --num_epochs 40 \
   --batch_size 32 \
-  --lr 1e-1 \
+  --learning_rate 1e-1 \
   --requires_norm \
   --num_workers 16
 
