@@ -95,7 +95,7 @@ def parse_arguments():
 
 
 def get_config(args):
-    exclude_keys = ["tags", "notes", "job_type", "limit_batches"]
+    exclude_keys = {"tags", "notes", "job_type", "limit_batches"}
 
     config = {k: v for k, v in vars(args).items() if k not in exclude_keys} | {
         'limit_train_batches': args.limit_batches[0] if args.limit_batches and args.limit_batches[

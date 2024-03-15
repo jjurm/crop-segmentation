@@ -147,10 +147,10 @@ class BaseModelModule(pl.LightningModule):
 
     def setup(self, stage: str) -> None:
         if stage == "fit" or stage == "validate":
-            wandb.define_metric("val/acc", summary="max")
-            wandb.define_metric("val/acc_parcel", summary="max")
-            wandb.define_metric("val/f1w", summary="max")
-            wandb.define_metric("val/f1w_parcel", summary="max")
+            wandb.define_metric("val/acc", summary="max,mean,last")
+            wandb.define_metric("val/acc_parcel", summary="max,mean,last")
+            wandb.define_metric("val/f1w", summary="max,mean,last")
+            wandb.define_metric("val/f1w_parcel", summary="max,mean,last")
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
