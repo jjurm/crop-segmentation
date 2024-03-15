@@ -114,10 +114,10 @@ class UNet(nn.Module):
             layers.append(Up(feats, feats // 2, False))
             feats //= 2
 
-        self.last_layer = nn.Conv2d(feats, num_classes, kernel_size=1)
-        initialize_last_layer_bias(self.last_layer, relative_class_frequencies)
+        last_layer = nn.Conv2d(feats, num_classes, kernel_size=1)
+        initialize_last_layer_bias(last_layer, relative_class_frequencies)
 
-        layers.append(self.last_layer)
+        layers.append(last_layer)
         layers.append(nn.LogSoftmax(dim=1))
 
         self.layers = nn.ModuleList(layers)
