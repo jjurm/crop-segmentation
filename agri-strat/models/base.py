@@ -18,7 +18,6 @@ from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, M
 from config import SELECTED_CLASSES
 from models.convstar import ConvSTAR
 from models.unet import UNet
-from models.utils import calculate_class_frequencies
 from utils.constants import IMG_SIZE
 from utils.medians_metadata import MediansMetadata
 
@@ -89,15 +88,21 @@ class BaseModelModule(pl.LightningModule):
         self.checkpoint_epoch = checkpoint_epoch
         self.medians_metadata = medians_metadata
 
+        # Calculate class weights and log as a table to Wandb
+        class_counts, relative_class_frequencies = self._calculate_class_counts_frequencies(class_counts, parcel_loss)
+        class_weights = self._calculate_class_weights(relative_class_frequencies)
+        self._log_class_counts_weights(class_counts, class_weights, parcel_loss)
+
         # Loss function
         if weighted_loss:
-            class_weights = class_weights_weight * self._calculate_class_weights(class_counts, parcel_loss).cuda() + \
-                            (1 - class_weights_weight) * torch.ones(self.num_classes).cuda()
+            class_weights_weighted = class_weights_weight * class_weights + \
+                            (1 - class_weights_weight) * torch.ones(self.num_classes)
+            class_weights_weighted = class_weights.float().cuda()
         else:
-            class_weights = None
+            class_weights_weighted = None
 
-        self.loss_nll = nn.NLLLoss(weight=class_weights)
-        self.loss_nll_parcel = nn.NLLLoss(weight=class_weights, ignore_index=0)
+        self.loss_nll = nn.NLLLoss(weight=class_weights_weighted)
+        self.loss_nll_parcel = nn.NLLLoss(weight=class_weights_weighted, ignore_index=0)
         self.metric_acc = MulticlassAccuracy(num_classes=self.num_classes, average="macro")
         self.metric_acc_parcel = MulticlassAccuracy(num_classes=self.num_classes, average="macro", ignore_index=0)
         self.metric_f1w = MulticlassF1Score(num_classes=self.num_classes, average="weighted")
@@ -113,45 +118,48 @@ class BaseModelModule(pl.LightningModule):
         self.model = get_model_class(model)(
             num_classes=self.num_classes,
             num_bands=len(bands),
-            relative_class_frequencies=calculate_class_frequencies(class_counts, parcel_loss),
+            relative_class_frequencies=relative_class_frequencies,
             **kwargs)
 
         self.num_pixels_seen = 0
         self.validation_examples = None
         self.validation_patch_scores = None
 
-    def _calculate_class_weights(self, class_counts: dict[any, int], parcel_loss):
+    def _calculate_class_weights(self, relative_class_frequencies):
         """
         Calculate class weights for the loss function.
         """
-        # Compute weights for each class
-        filtered_counts = {
-            self.linear_encoder[int(k)]:  # map the original label to the training label (for ordering)
-                (v if (int(k) != 0 or not parcel_loss) else 0)  # if parcel_loss, ignore the zero class
-            for k, v in class_counts.items()
-            if int(k) in self.linear_encoder  # only include classes that are in the linear encoder
-        }
-
-        all_counts = sum(filtered_counts.values())
-        n_classes = len(filtered_counts)
+        n_classes = len(relative_class_frequencies)
         class_weights = [
-            (all_counts / (n_classes * v)) if v != 0 else 0  # if v == 0, then the class is ignored
-            for k, v in sorted(filtered_counts.items())
+            1 / (n_classes * freq) if freq != 0 else 0
+            for freq in relative_class_frequencies
         ]
 
-        # Log class weights as a table to Wandb
+        return torch.tensor(class_weights)
+
+    def _log_class_counts_weights(self, class_counts, class_weights, parcel_loss):
         class_names = ["0"] + [name for _, name in SELECTED_CLASSES]
         class_weights_table = wandb.Table(
             columns=["ID", "Class Name", "Pixel count", "Weight"],
             data=[
-                [id_, class_names[k], filtered_counts[k], class_weights[k]]
+                [id_, class_names[k], class_counts[k], class_weights[k]]
                 for id_, k in sorted(self.linear_encoder.items())
                 if (k != 0 or not parcel_loss)  # if parcel_loss, ignore the zero class
             ],
         )
         wandb.log({"class_weights": class_weights_table})
 
-        return torch.tensor(class_weights)
+    def _calculate_class_counts_frequencies(self, class_counts, parcel_loss):
+        filtered_counts = {
+            self.linear_encoder[int(k)]:  # map the original label to the training label (for ordering)
+                (v if (int(k) != 0 or not parcel_loss) else 0)  # if parcel_loss, ignore the zero class
+            for k, v in class_counts.items()
+            if int(k) in self.linear_encoder  # only include classes that are in the linear encoder
+        }
+        filtered_counts = np.array([v for k, v in sorted(filtered_counts.items())])
+        total_count = np.sum(filtered_counts)
+        relative_class_frequencies = filtered_counts / total_count
+        return filtered_counts, relative_class_frequencies
 
     def setup(self, stage: str) -> None:
         if stage == "fit" or stage == "validate":
