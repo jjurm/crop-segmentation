@@ -162,6 +162,7 @@ class BaseModelModule(pl.LightningModule):
         return filtered_counts, relative_class_frequencies
 
     def setup(self, stage: str) -> None:
+        # Define metric summaries
         if stage == "fit" or stage == "validate":
             wandb.define_metric("val/acc", summary="max,mean,last")
             wandb.define_metric("val/acc_parcel", summary="max,mean,last")
@@ -169,6 +170,10 @@ class BaseModelModule(pl.LightningModule):
             wandb.define_metric("val/f1w_parcel", summary="max,mean,last")
             wandb.define_metric("val/f1ma", summary="max,mean,last")
             wandb.define_metric("val/f1ma_parcel", summary="max,mean,last")
+
+        # Log gradients
+        if stage == "fit":
+            wandb.watch(self.model, log_freq=100, log="gradients")
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
