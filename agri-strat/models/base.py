@@ -101,6 +101,8 @@ class BaseModelModule(pl.LightningModule):
         self.metric_acc_parcel = MulticlassAccuracy(num_classes=self.num_classes, average="macro", ignore_index=0)
         self.metric_f1w = MulticlassF1Score(num_classes=self.num_classes, average="weighted")
         self.metric_f1w_parcel = MulticlassF1Score(num_classes=self.num_classes, average="weighted", ignore_index=0)
+        self.metric_f1ma = MulticlassF1Score(num_classes=self.num_classes, average="macro")
+        self.metric_f1ma_parcel = MulticlassF1Score(num_classes=self.num_classes, average="macro", ignore_index=0)
         self.confusion_matrix = MulticlassConfusionMatrix(num_classes=self.num_classes, normalize="none",
                                                           ignore_index=0 if parcel_loss else None)
 
@@ -151,6 +153,8 @@ class BaseModelModule(pl.LightningModule):
             wandb.define_metric("val/acc_parcel", summary="max,mean,last")
             wandb.define_metric("val/f1w", summary="max,mean,last")
             wandb.define_metric("val/f1w_parcel", summary="max,mean,last")
+            wandb.define_metric("val/f1ma", summary="max,mean,last")
+            wandb.define_metric("val/f1ma_parcel", summary="max,mean,last")
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
@@ -237,8 +241,10 @@ class BaseModelModule(pl.LightningModule):
 
         acc = self.metric_acc(output, labels)
         f1w = self.metric_f1w(output, labels)
+        f1ma = self.metric_f1ma(output, labels)
         acc_parcel = self.metric_acc_parcel(output, labels)
         f1w_parcel = self.metric_f1w_parcel(output, labels)
+        f1ma_parcel = self.metric_f1ma_parcel(output, labels)
         self.confusion_matrix.update(output, labels)
 
         self._collect_per_patch_scores(batch, output)
@@ -250,8 +256,12 @@ class BaseModelModule(pl.LightningModule):
         }, on_step=False, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
         self.log_dict({
             'val/acc_parcel': acc_parcel,
-            'val/f1w_parcel': f1w_parcel
+            'val/f1w_parcel': f1w_parcel,
         }, on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
+        self.log_dict({
+            'val/f1ma': f1ma,
+            'val/f1ma_parcel': f1ma_parcel,
+        }, on_step=False, on_epoch=True, logger=True, prog_bar=False, batch_size=batch_size)
 
     def _collect_per_patch_scores(self, batch, output):
         for i, patch_path in enumerate(batch["patch_path"]):
@@ -263,6 +273,9 @@ class BaseModelModule(pl.LightningModule):
                     "f1w": MulticlassF1Score(num_classes=self.num_classes, average="weighted").to(self.device),
                     "f1w_parcel": MulticlassF1Score(num_classes=self.num_classes, average="weighted",
                                                     ignore_index=0).to(self.device),
+                    "f1ma": MulticlassF1Score(num_classes=self.num_classes, average="macro").to(self.device),
+                    "f1ma_parcel": MulticlassF1Score(num_classes=self.num_classes, average="macro", ignore_index=0).to(
+                        self.device),
                     "n_pixels": 0,
                 }
             scores = self.validation_patch_scores[patch_path]
@@ -274,8 +287,10 @@ class BaseModelModule(pl.LightningModule):
             labels_ = batch["labels"][i].unsqueeze(0)
             scores["acc"].update(outputs_, labels_)
             scores["f1w"].update(outputs_, labels_)
+            scores["f1ma"].update(outputs_, labels_)
             scores["acc_parcel"].update(outputs_, labels_)
             scores["f1w_parcel"].update(outputs_, labels_)
+            scores["f1ma_parcel"].update(outputs_, labels_)
             scores["n_pixels"] += n_pixels
 
     def _collect_preview_samples(self, batch, output):
@@ -337,8 +352,10 @@ class BaseModelModule(pl.LightningModule):
         for patch_path, scores in self.validation_patch_scores.items():
             scores["acc"] = scores["acc"].compute().item()
             scores["f1w"] = scores["f1w"].compute().item()
+            scores["f1ma"] = scores["f1ma"].compute().item()
             scores["acc_parcel"] = scores["acc_parcel"].compute().item()
             scores["f1w_parcel"] = scores["f1w_parcel"].compute().item()
+            scores["f1ma_parcel"] = scores["f1ma_parcel"].compute().item()
         patch_scores_df = pd.DataFrame.from_dict(self.validation_patch_scores, orient="index").reset_index()
         csv_file = self.run_dir / "patch_scores.csv"
         patch_scores_df.to_csv(csv_file, index=False)
