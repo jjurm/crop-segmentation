@@ -212,6 +212,7 @@ class BaseModelModule(pl.LightningModule):
         if not torch.isnan(loss_nll):
             self.log('val/loss_nll', loss_nll,
                      on_step=False, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
+        if not torch.isnan(loss_nll_parcel):
             self.log('val/loss_nll_parcel', loss_nll_parcel,
                      on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
 
