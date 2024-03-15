@@ -44,7 +44,6 @@ def parse_arguments():
     parser.add_argument('--model', type=str, default="unet", required=False,
                         choices=['unet', 'convstar'],
                         help='Model to use. One of [\'unet\', \'convstar\']')
-
     parser.add_argument('--parcel_loss', action='store_true', default=False, required=False,
                         help='Use a loss function that takes into account parcel pixels only.')
     parser.add_argument('--weighted_loss', action='store_true', default=False, required=False,
@@ -93,34 +92,13 @@ def parse_arguments():
 
 
 def get_config(args):
-    config = {
-        'model': args.model,
-        'devtest': args.devtest,
-        'limit_train_batches': args.limit_batches[0] if args.limit_batches and args.limit_batches[0] > 0 else None,
+    exclude_keys = ["tags", "notes", "job_type", "limit_batches"]
+
+    config = {k: v for k, v in vars(args).items() if k not in exclude_keys} | {
+        'limit_train_batches': args.limit_batches[0] if args.limit_batches and args.limit_batches[
+            0] > 0 else None,
         'limit_val_batches': args.limit_batches[1] if args.limit_batches and len(args.limit_batches) >= 2 and
                                                       args.limit_batches[1] > 0 else None,
-
-        'medians_artifact': args.medians_artifact,
-        'medians_path': args.medians_path,
-        'split_artifact': args.split_artifact,
-        'bins_range': args.bins_range,
-
-        'parcel_loss': args.parcel_loss,
-        'weighted_loss': args.weighted_loss,
-        'class_weights_weight': args.class_weights_weight,
-        'batch_size': args.batch_size,
-        'num_epochs': args.num_epochs,
-        'learning_rate': args.learning_rate,
-        'requires_norm': args.requires_norm,
-
-        'deterministic': args.deterministic,
-        'seed': args.seed,
-        'shuffle_buffer_num_patches': args.shuffle_buffer_num_patches,
-
-        'num_workers': args.num_workers,
-        'cache_dataset': args.cache_dataset,
-        'num_gpus': args.num_gpus,
-        'num_nodes': args.num_nodes,
     }
     return config
 
