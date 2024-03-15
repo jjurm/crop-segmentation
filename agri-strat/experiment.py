@@ -195,7 +195,7 @@ def main():
                 dirpath=Path(wandb.run.dir) / "checkpoints",
                 filename='ckpt_epoch={epoch:02d}',
                 monitor=run.config["monitor_metric"],
-                save_last='link',
+                save_last=True,
                 save_top_k=-1,
                 mode='max',
                 auto_insert_metric_name=False,
