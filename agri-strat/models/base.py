@@ -213,8 +213,6 @@ class BaseModelModule(pl.LightningModule):
                  on_step=True, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
         self.log('train/loss_nll_parcel', loss_nll_parcel,
                  on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
-        self.log('train/samples_seen', self.global_step * batch_size,
-                 on_step=True, on_epoch=False, logger=True, batch_size=batch_size)
 
         if self.parcel_loss:
             self.num_pixels_seen += (labels != 0).sum().item()
