@@ -40,6 +40,7 @@ class MediansDataModule(pl.LightningDataModule):
             num_workers: int,
             cache_dataset: bool,
             shuffle_buffer_num_patches: int,
+            skip_zero_label_subpatches: bool,
     ):
         super().__init__()
 
@@ -52,6 +53,7 @@ class MediansDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.cache_dataset = cache_dataset
         self.shuffle_buffer_num_patches = shuffle_buffer_num_patches
+        self.skip_zero_label_subpatches = skip_zero_label_subpatches
 
         self.dataloader_args = {
             'batch_size': None,
@@ -105,6 +107,7 @@ class MediansDataModule(pl.LightningDataModule):
             self.dataset_train = MediansDataset(split_file=(self.splits_dir / "train.txt"),
                                                 patch_count=self.patch_counts["train"],
                                                 shuffle=True, batched=False,
+                                                skip_zero_label_subpatches=self.skip_zero_label_subpatches,
                                                 **common_config)
             self.dataset_val = MediansDataset(split_file=(self.splits_dir / "val.txt"),
                                               patch_count=self.patch_counts["val"],

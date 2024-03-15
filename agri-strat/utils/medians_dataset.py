@@ -24,6 +24,7 @@ class MediansDataset(IterableDataset):
             requires_norm: bool,
             shuffle: bool = False,
             batched: bool = True,  # When true, each sample is a batch of subpatches
+            skip_zero_label_subpatches: bool = False,
     ) -> None:
         super().__init__()
         self.patch_count = patch_count
@@ -33,6 +34,7 @@ class MediansDataset(IterableDataset):
         self.linear_encoder = linear_encoder
         self.requires_norm = requires_norm
         self.batched = batched
+        self.skip_zero_label_subpatches = skip_zero_label_subpatches
 
         df = pd.read_csv(split_file, header=None, names=["path"])["path"]
         if shuffle:
@@ -89,6 +91,8 @@ class MediansDataset(IterableDataset):
             batch = []
             for subpatch_y in range(medians.shape[0]):
                 for subpatch_x in range(medians.shape[1]):
+                    if self.skip_zero_label_subpatches and not np.any(labels_mapped[subpatch_y, subpatch_x]):
+                        continue
                     batch.append({
                         'medians': medians[subpatch_y, subpatch_x],
                         'labels': labels_mapped[subpatch_y, subpatch_x],

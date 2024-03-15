@@ -62,6 +62,9 @@ def parse_arguments():
     parser.add_argument('--bins_range', type=int, nargs=2, default=[4, 9], required=False,
                         help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). '
                              'Default: [4, 9].')
+    parser.add_argument('--skip_empty_subpatches', action='store_true', default=False, required=False,
+                        help='Skip subpatches during training that have no pixels of interest (only relevant with '
+                             'parcel_loss). Default False.')
 
     parser.add_argument('--num_epochs', type=int, default=10, required=False,
                         help='Number of epochs. Default 10')
@@ -122,6 +125,7 @@ def create_datamodule(config):
         num_workers=config["num_workers"],
         cache_dataset=config["cache_dataset"],
         shuffle_buffer_num_patches=config["shuffle_buffer_num_patches"],
+        skip_zero_label_subpatches=config["parcel_loss"] and config["skip_empty_subpatches"],
     )
     datamodule.prepare_data()
     datamodule.setup('fit')
