@@ -1,5 +1,6 @@
 import pickle
 from pathlib import Path
+from typing import Dict, Any
 
 import lightning.pytorch as pl
 import matplotlib.pyplot as plt
@@ -107,6 +108,7 @@ class BaseModelModule(pl.LightningModule):
 
         self.model = get_model_class(model)(num_classes=self.num_classes, num_bands=len(bands), **kwargs)
 
+        self.num_pixels_seen = 0
         self.validation_examples = None
         self.validation_patch_scores = None
 
@@ -177,6 +179,12 @@ class BaseModelModule(pl.LightningModule):
             'monitor': self.hparams.get("monitor_metric"),
         }]
 
+    def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        checkpoint["pixels_seen"] = self.num_pixels_seen
+
+    def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        self.num_pixels_seen = checkpoint["pixels_seen"]
+
     def training_step(self, batch, batch_idx):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
         batch_size = inputs.shape[0]
@@ -187,6 +195,17 @@ class BaseModelModule(pl.LightningModule):
                  on_step=True, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
         self.log('train/loss_nll_parcel', loss_nll_parcel,
                  on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
+        self.log('train/samples_seen', self.global_step * batch_size,
+                 on_step=True, on_epoch=False, logger=True, batch_size=batch_size)
+
+        if self.parcel_loss:
+            self.num_pixels_seen += (labels != 0).sum().item()
+        else:
+            self.num_pixels_seen += batch_size * labels.shape[1] * labels.shape[2]
+        self.log_dict({
+            'trainer/samples_seen': self.global_step * batch_size,
+            'trainer/pixels_seen': self.num_pixels_seen,
+        }, on_step=True, on_epoch=False, logger=True, batch_size=batch_size)
 
         loss = loss_nll_parcel if self.parcel_loss else loss_nll
         if torch.isnan(loss):
