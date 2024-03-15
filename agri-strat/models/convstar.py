@@ -13,6 +13,8 @@ import torch
 import torch.nn as nn
 from torch.nn import init
 
+from models.utils import initialize_last_layer_bias
+
 
 class ConvSTARCell(nn.Module):
     """
@@ -55,7 +57,8 @@ class ConvSTARCell(nn.Module):
 
 
 class ConvSTAR(nn.Module):
-    def __init__(self, num_classes, input_size=4, hidden_sizes=64, kernel_sizes=3, num_layers=3, **kwargs):
+    def __init__(self, num_classes, input_size=4, hidden_sizes=64, kernel_sizes=3, num_layers=3,
+                 relative_class_frequencies=None, **kwargs):
         """
         Parameters:
         -----------
@@ -106,6 +109,7 @@ class ConvSTAR(nn.Module):
             stride=1,
             padding=0
         )
+        initialize_last_layer_bias(self.conv2d, relative_class_frequencies)
 
         self.softmax = nn.LogSoftmax(dim=1)
 

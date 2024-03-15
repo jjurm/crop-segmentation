@@ -18,6 +18,7 @@ from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, M
 from config import SELECTED_CLASSES
 from models.convstar import ConvSTAR
 from models.unet import UNet
+from models.utils import calculate_class_frequencies
 from utils.constants import IMG_SIZE
 from utils.medians_metadata import MediansMetadata
 
@@ -43,7 +44,7 @@ class BaseModelModule(pl.LightningModule):
             learning_rate,
             monitor_metric: str,
             weighted_loss: bool,
-            class_weights_weight: float, # interpolate between class weights and uniform weights
+            class_weights_weight: float,  # interpolate between class weights and uniform weights
             bands: list[str],
             medians_metadata: MediansMetadata,
             parcel_loss=False,
@@ -108,7 +109,12 @@ class BaseModelModule(pl.LightningModule):
 
         self.run_dir = Path(wandb.run.dir)
 
-        self.model = get_model_class(model)(num_classes=self.num_classes, num_bands=len(bands), **kwargs)
+        # Create the model
+        self.model = get_model_class(model)(
+            num_classes=self.num_classes,
+            num_bands=len(bands),
+            relative_class_frequencies=calculate_class_frequencies(class_counts, parcel_loss),
+            **kwargs)
 
         self.num_pixels_seen = 0
         self.validation_examples = None

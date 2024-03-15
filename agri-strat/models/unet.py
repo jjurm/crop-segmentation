@@ -8,10 +8,11 @@ https://github.com/PyTorchLightning/lightning-bolts/blob/master/pl_bolts/models/
 Adopted from:
 https://github.com/Orion-AI-Lab/S4A-Models/blob/master/model/PAD_unet.py
 """
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from models.utils import initialize_last_layer_bias
 
 
 class DoubleConv(nn.Module):
@@ -27,6 +28,11 @@ class DoubleConv(nn.Module):
             nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True),
         )
+
+        # Apply kaiming_uniform_ initialization
+        for m in self.net.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_uniform_(m.weight)
 
     def forward(self, x):
         return self.net(x)
@@ -78,7 +84,7 @@ class Up(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, num_classes, num_bands, num_time_steps, num_layers=3):
+    def __init__(self, num_classes, num_bands, num_time_steps, num_layers=3, relative_class_frequencies=None):
         """
         Parameters:
         -----------
@@ -108,7 +114,10 @@ class UNet(nn.Module):
             layers.append(Up(feats, feats // 2, False))
             feats //= 2
 
-        layers.append(nn.Conv2d(feats, num_classes, kernel_size=1))
+        self.last_layer = nn.Conv2d(feats, num_classes, kernel_size=1)
+        initialize_last_layer_bias(self.last_layer, relative_class_frequencies)
+
+        layers.append(self.last_layer)
         layers.append(nn.LogSoftmax(dim=1))
 
         self.layers = nn.ModuleList(layers)
