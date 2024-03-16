@@ -205,7 +205,7 @@ def main():
                 mode='max',
                 auto_insert_metric_name=False,
             ),
-            CustomProgressBar(),
+            CustomProgressBar(refresh_rate=1 if run.config["devtest"] else 10),
         ]
         logger = CustomWandbLogger(
             experiment=run,
