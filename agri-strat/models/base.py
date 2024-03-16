@@ -37,7 +37,6 @@ class BaseModelModule(pl.LightningModule):
             model: str,
             label_encoder: LabelEncoder,
             learning_rate,
-            monitor_metric: str,
             weighted_loss: bool,
             class_weights_weight: float,  # interpolate between class weights and uniform weights
             bands: list[str],
@@ -62,7 +61,7 @@ class BaseModelModule(pl.LightningModule):
         """
         super(BaseModelModule, self).__init__()
         self.save_hyperparameters(
-            ignore=["class_counts", "label_encoder", "monitor_metric", "bands", "num_time_steps", "medians_metadata"])
+            ignore=["class_counts", "label_encoder", "bands", "num_time_steps", "medians_metadata"])
 
         self.label_encoder = label_encoder
         num_classes = label_encoder.num_classes
@@ -70,6 +69,8 @@ class BaseModelModule(pl.LightningModule):
         self.bands = bands
         self.parcel_loss = parcel_loss
         self.medians_metadata = medians_metadata
+
+        self.monitor_metric = 'val/f1w_parcel' if self.parcel_loss else 'val/f1w'
 
         # Calculate class weights and log as a table to Wandb
         class_counts, relative_class_frequencies = self._calculate_class_counts_frequencies(class_counts, parcel_loss)
@@ -142,7 +143,7 @@ class BaseModelModule(pl.LightningModule):
         return mapped_counts, relative_class_frequencies
 
     def setup(self, stage: str) -> None:
-        wandb.run.summary["monitor_metric"] = self.hparams.get("monitor_metric")
+        wandb.run.summary["monitor_metric"] = self.monitor_metric
 
         # Define metric summaries
         if stage == "fit" or stage == "validate":
@@ -181,7 +182,7 @@ class BaseModelModule(pl.LightningModule):
 
         return [optimizer], [{
             'scheduler': lr_scheduler,
-            'monitor': self.hparams.get("monitor_metric"),
+            'monitor': self.monitor_metric,
         }]
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:

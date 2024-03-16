@@ -161,7 +161,6 @@ def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataMod
         class_weights_weight=config["class_weights_weight"],
         model=config["model"],
         parcel_loss=config["parcel_loss"],
-        monitor_metric=config["monitor_metric"],
         num_layers=3,
         learning_rate=config["learning_rate"],
         **unsaved_params,
@@ -181,7 +180,6 @@ def main():
             config=get_config(args),
             settings=wandb.Settings(job_name="train1"),
     ) as run:
-        run.config.update({"monitor_metric": 'val/f1w_parcel' if run.config["parcel_loss"] else 'val/f1w'})
         run.summary["node_name"] = os.environ.get('NODE_NAME', None)
 
         torch.set_float32_matmul_precision('medium')
@@ -199,7 +197,7 @@ def main():
             ModelCheckpoint(
                 dirpath=Path(wandb.run.dir) / "checkpoints",
                 filename='ckpt_epoch={epoch:02d}',
-                monitor=run.config["monitor_metric"],
+                monitor=model.monitor_metric,
                 save_last=True,
                 save_top_k=-1,
                 mode='max',
