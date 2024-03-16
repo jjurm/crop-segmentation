@@ -44,8 +44,6 @@ class BaseModelModule(pl.LightningModule):
             medians_metadata: MediansMetadata,
             parcel_loss=False,
             class_counts: dict[int, int] = None,
-            crop_encoding=None,  # TODO remove if not needed in test stage
-            checkpoint_epoch=None,  # TODO remove if not needed in test stage
             **kwargs,
     ):
         """
@@ -61,22 +59,16 @@ class BaseModelModule(pl.LightningModule):
             used in the loss function.
         class_counts: dict, default None
             Counts of pixels per class to use for class weights calculation for the loss function.
-        crop_encoding: dict, default None
-            A dictionary mapping class ids to class names.
-        checkpoint_epoch: int, default None
-            The epoch loaded for testing.
         """
         super(BaseModelModule, self).__init__()
         self.save_hyperparameters(
-            ignore=["class_counts", "label_encoder", "crop_encoding", "bands", "num_time_steps", "medians_metadata"])
+            ignore=["class_counts", "label_encoder", "monitor_metric", "bands", "num_time_steps", "medians_metadata"])
 
         self.label_encoder = label_encoder
         num_classes = label_encoder.num_classes
         self.learning_rate = learning_rate
         self.bands = bands
         self.parcel_loss = parcel_loss
-        self.crop_encoding = crop_encoding
-        self.checkpoint_epoch = checkpoint_epoch
         self.medians_metadata = medians_metadata
 
         # Calculate class weights and log as a table to Wandb
@@ -150,6 +142,8 @@ class BaseModelModule(pl.LightningModule):
         return mapped_counts, relative_class_frequencies
 
     def setup(self, stage: str) -> None:
+        wandb.run.summary["monitor_metric"] = self.hparams.get("monitor_metric")
+
         # Define metric summaries
         if stage == "fit" or stage == "validate":
             wandb.define_metric("val/acc", summary="max,mean,last")
