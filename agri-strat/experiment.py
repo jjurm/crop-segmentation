@@ -15,13 +15,13 @@ import torch
 from lightning import seed_everything
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 
-import config as experiment_config
 import wandb
 from models.base import BaseModelModule
 from utils.callbacks.batch_counter import BatchCounterCallback
 from utils.custom_progress_bar import CustomProgressBar
 from utils.custom_wandb_logger import CustomWandbLogger
 from utils.exception_tracker_callback import ExceptionTrackerCallback
+from utils.label_encoder import LabelEncoder
 from utils.medians_datamodule import MediansDataModule
 
 
@@ -45,6 +45,8 @@ def parse_arguments():
     parser.add_argument('--model', type=str, default="unet", required=False,
                         choices=['unet', 'convstar'],
                         help='Model to use. One of [\'unet\', \'convstar\']')
+    parser.add_argument('--label_encoder_artifact', type=str, default="s4a_labels:latest", required=False,
+                        help='Wandb artifact of type \'label_encoder\' that defines classes to be predicted.')
     parser.add_argument('--parcel_loss', action='store_true', default=False, required=False,
                         help='Use a loss function that takes into account parcel pixels only.')
     parser.add_argument('--weighted_loss', action='store_true', default=False, required=False,
@@ -114,13 +116,13 @@ def get_tags(args, config):
     return tags
 
 
-def create_datamodule(config):
+def create_datamodule(config, label_encoder):
     datamodule = MediansDataModule(
         medians_artifact=config["medians_artifact"],
         medians_path=config["medians_path"] or os.getenv("MEDIANS_PATH", "dataset/medians"),
         split_artifact=config["split_artifact"],
         bins_range=config["bins_range"],
-        linear_encoder=experiment_config.LINEAR_ENCODER,
+        label_encoder=label_encoder,
         requires_norm=config["requires_norm"],
         batch_size=config["batch_size"],
         num_workers=config["num_workers"],
@@ -133,10 +135,10 @@ def create_datamodule(config):
     return datamodule
 
 
-def create_model(config, datamodule):
+def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataModule):
     unsaved_params = dict(
         class_counts=datamodule.pixel_counts['train'],
-        linear_encoder=experiment_config.LINEAR_ENCODER,
+        label_encoder=label_encoder,
         bands=datamodule.get_bands(),
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
         medians_metadata=datamodule.metadata,
@@ -186,8 +188,9 @@ def main():
         seed_everything(run.config["seed"], workers=True)
 
         print("Creating datamodule, model, trainer...")
-        datamodule = create_datamodule(run.config)
-        model = create_model(run.config, datamodule)
+        label_encoder = LabelEncoder(run.config["label_encoder_artifact"])
+        datamodule = create_datamodule(run.config, label_encoder)
+        model = create_model(run.config, label_encoder, datamodule)
 
         callbacks = [
             BatchCounterCallback(datamodule),

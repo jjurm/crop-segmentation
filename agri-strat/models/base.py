@@ -1,24 +1,20 @@
-import pickle
 from pathlib import Path
 from typing import Dict, Any
 
 import lightning.pytorch as pl
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import wandb
-from matplotlib.patches import Rectangle
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, LRScheduler
 from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, MulticlassConfusionMatrix
 
-from config import SELECTED_CLASSES
 from models.convstar import ConvSTAR
 from models.unet import UNet
 from utils.constants import IMG_SIZE
+from utils.label_encoder import LabelEncoder
 from utils.medians_metadata import MediansMetadata
 
 NUM_VALIDATION_PATCH_EXAMPLES = 6
@@ -39,7 +35,7 @@ class BaseModelModule(pl.LightningModule):
     def __init__(
             self,
             model: str,
-            linear_encoder,
+            label_encoder: LabelEncoder,
             learning_rate,
             monitor_metric: str,
             weighted_loss: bool,
@@ -47,7 +43,7 @@ class BaseModelModule(pl.LightningModule):
             bands: list[str],
             medians_metadata: MediansMetadata,
             parcel_loss=False,
-            class_counts=None,
+            class_counts: dict[int, int] = None,
             crop_encoding=None,  # TODO remove if not needed in test stage
             checkpoint_epoch=None,  # TODO remove if not needed in test stage
             **kwargs,
@@ -55,11 +51,6 @@ class BaseModelModule(pl.LightningModule):
         """
         Parameters:
         -----------
-        linear_encoder: dict
-            A dictionary mapping the true labels to the given labels.
-            True labels = the labels in the mappings file.
-            Given labels = labels ranging from 0 to len(true labels), which the
-            true labels have been converted into.
         learning_rate: float, default 1e-3
             The initial learning rate.
         weighted_loss: boolean
@@ -77,10 +68,10 @@ class BaseModelModule(pl.LightningModule):
         """
         super(BaseModelModule, self).__init__()
         self.save_hyperparameters(
-            ignore=["class_counts", "linear_encoder", "crop_encoding", "bands", "num_time_steps", "medians_metadata"])
+            ignore=["class_counts", "label_encoder", "crop_encoding", "bands", "num_time_steps", "medians_metadata"])
 
-        self.linear_encoder = linear_encoder
-        self.num_classes = len(set(linear_encoder.values()))
+        self.label_encoder = label_encoder
+        num_classes = label_encoder.num_classes
         self.learning_rate = learning_rate
         self.bands = bands
         self.parcel_loss = parcel_loss
@@ -96,27 +87,27 @@ class BaseModelModule(pl.LightningModule):
         # Loss function
         if weighted_loss:
             class_weights_weighted = class_weights_weight * class_weights + \
-                                     (1 - class_weights_weight) * torch.ones(self.num_classes)
+                                     (1 - class_weights_weight) * torch.ones(num_classes)
             class_weights_weighted = class_weights_weighted.float().cuda()
         else:
             class_weights_weighted = None
 
         self.loss_nll = nn.NLLLoss(weight=class_weights_weighted)
         self.loss_nll_parcel = nn.NLLLoss(weight=class_weights_weighted, ignore_index=0)
-        self.metric_acc = MulticlassAccuracy(num_classes=self.num_classes, average="macro")
-        self.metric_acc_parcel = MulticlassAccuracy(num_classes=self.num_classes, average="macro", ignore_index=0)
-        self.metric_f1w = MulticlassF1Score(num_classes=self.num_classes, average="weighted")
-        self.metric_f1w_parcel = MulticlassF1Score(num_classes=self.num_classes, average="weighted", ignore_index=0)
-        self.metric_f1ma = MulticlassF1Score(num_classes=self.num_classes, average="macro")
-        self.metric_f1ma_parcel = MulticlassF1Score(num_classes=self.num_classes, average="macro", ignore_index=0)
-        self.confusion_matrix = MulticlassConfusionMatrix(num_classes=self.num_classes, normalize="none",
+        self.metric_acc = MulticlassAccuracy(num_classes=num_classes, average="macro")
+        self.metric_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="macro", ignore_index=0)
+        self.metric_f1w = MulticlassF1Score(num_classes=num_classes, average="weighted")
+        self.metric_f1w_parcel = MulticlassF1Score(num_classes=num_classes, average="weighted", ignore_index=0)
+        self.metric_f1ma = MulticlassF1Score(num_classes=num_classes, average="macro")
+        self.metric_f1ma_parcel = MulticlassF1Score(num_classes=num_classes, average="macro", ignore_index=0)
+        self.confusion_matrix = MulticlassConfusionMatrix(num_classes=num_classes, normalize="none",
                                                           ignore_index=0 if parcel_loss else None)
 
         self.run_dir = Path(wandb.run.dir)
 
         # Create the model
         self.model = get_model_class(model)(
-            num_classes=self.num_classes,
+            num_classes=num_classes,
             num_bands=len(bands),
             relative_class_frequencies=relative_class_frequencies,
             **kwargs)
@@ -138,28 +129,25 @@ class BaseModelModule(pl.LightningModule):
         return torch.tensor(class_weights)
 
     def _log_class_counts_weights(self, class_counts, class_weights, parcel_loss):
-        class_names = ["0"] + [name for _, name in SELECTED_CLASSES]
         class_weights_table = wandb.Table(
-            columns=["ID", "Class Name", "Pixel count", "Weight"],
+            columns=["IDs", "Class Name", "Pixel count", "Weight"],
             data=[
-                [id_, class_names[k], class_counts[k], class_weights[k]]
-                for id_, k in sorted(self.linear_encoder.items())
-                if (k != 0 or not parcel_loss)  # if parcel_loss, ignore the zero class
+                [",".join(map(str, dataset_labels)), name, class_counts[i], class_weights[i]]
+                for i, dataset_labels, name in self.label_encoder.entries_with_name
+                if (i != 0 or not parcel_loss)  # if parcel_loss, skip the zero class
             ],
         )
         wandb.log({"class_weights": class_weights_table})
 
-    def _calculate_class_counts_frequencies(self, class_counts, parcel_loss):
-        filtered_counts = {
-            self.linear_encoder[int(k)]:  # map the original label to the training label (for ordering)
-                (v if (int(k) != 0 or not parcel_loss) else 0)  # if parcel_loss, ignore the zero class
-            for k, v in class_counts.items()
-            if int(k) in self.linear_encoder  # only include classes that are in the linear encoder
-        }
-        filtered_counts = np.array([v for k, v in sorted(filtered_counts.items())])
-        total_count = np.sum(filtered_counts)
-        relative_class_frequencies = filtered_counts / total_count
-        return filtered_counts, relative_class_frequencies
+    def _calculate_class_counts_frequencies(self, class_counts: dict[int, int], parcel_loss):
+        mapped_counts = np.array([
+            0 if i == 0 and parcel_loss else
+            sum(class_counts[dataset_label] for dataset_label in dataset_labels)
+            for i, dataset_labels in self.label_encoder.entries
+        ])
+        total_count = np.sum(mapped_counts)
+        relative_class_frequencies = mapped_counts / total_count
+        return mapped_counts, relative_class_frequencies
 
     def setup(self, stage: str) -> None:
         # Define metric summaries
@@ -284,15 +272,18 @@ class BaseModelModule(pl.LightningModule):
         for i, patch_path in enumerate(batch["patch_path"]):
             if patch_path not in self.validation_patch_scores:
                 self.validation_patch_scores[patch_path] = {
-                    "acc": MulticlassAccuracy(num_classes=self.num_classes, average="macro").to(self.device),
-                    "acc_parcel": MulticlassAccuracy(num_classes=self.num_classes, average="macro", ignore_index=0).to(
-                        self.device),
-                    "f1w": MulticlassF1Score(num_classes=self.num_classes, average="weighted").to(self.device),
-                    "f1w_parcel": MulticlassF1Score(num_classes=self.num_classes, average="weighted",
-                                                    ignore_index=0).to(self.device),
-                    "f1ma": MulticlassF1Score(num_classes=self.num_classes, average="macro").to(self.device),
-                    "f1ma_parcel": MulticlassF1Score(num_classes=self.num_classes, average="macro", ignore_index=0).to(
-                        self.device),
+                    "acc": MulticlassAccuracy(num_classes=self.label_encoder.num_classes,
+                                              average="macro").to(self.device),
+                    "acc_parcel": MulticlassAccuracy(num_classes=self.label_encoder.num_classes,
+                                                     average="macro", ignore_index=0).to(self.device),
+                    "f1w": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
+                                             average="weighted").to(self.device),
+                    "f1w_parcel": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
+                                                    average="weighted", ignore_index=0).to(self.device),
+                    "f1ma": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
+                                              average="macro").to(self.device),
+                    "f1ma_parcel": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
+                                                     average="macro", ignore_index=0).to(self.device),
                     "n_pixels": 0,
                 }
             scores = self.validation_patch_scores[patch_path]
@@ -342,16 +333,15 @@ class BaseModelModule(pl.LightningModule):
         self.validation_patch_scores = None
 
     def _get_wandb_confusion_matrix(self, confusion_matrix):
-        class_names = ["0"] + [name for _, name in SELECTED_CLASSES]
-
         data = []
-        for i in range(self.confusion_matrix.num_classes):
-            if self.parcel_loss and i == 0:
-                continue
-            for j in range(self.confusion_matrix.num_classes):
-                if self.parcel_loss and j == 0:
-                    continue
-                data.append([class_names[i], class_names[j], confusion_matrix[i, j]])
+        classes = range(self.confusion_matrix.num_classes)[int(self.parcel_loss):]
+        for i in classes:
+            for j in classes:
+                data.append([
+                    self.label_encoder.class_names[i],
+                    self.label_encoder.class_names[j],
+                    confusion_matrix[i, j],
+                ])
 
         fields = {
             "Actual": "Actual",
@@ -390,7 +380,7 @@ class BaseModelModule(pl.LightningModule):
         examples_table = wandb.Table(columns=["patch", "inputs", "ground truth", "predictions", "errors"])
         rgb_band_indices = [self.bands.index(band) for band in ["B04", "B03", "B02"]]
         images = []
-        class_labels = {0: "0"} | {self.linear_encoder[k]: v for k, v in SELECTED_CLASSES}
+        class_labels = {i: name for i, _, name in self.label_encoder.entries_with_name}
         error_labels = {
             0: "correct",
             1: "incorrect",
@@ -399,9 +389,10 @@ class BaseModelModule(pl.LightningModule):
             class_labels[CLASS_LABEL_IGNORED] = "ignored"
             error_labels[CLASS_LABEL_IGNORED] = "ignored"
         class_set = [
-            {"id": id_, "name": name}
-            for id_, name in class_labels.items()
+            {"id": i, "name": name}
+            for i, name in class_labels.items()
         ]
+
         pixels_dtype = self.validation_examples["inputs"][0].dtype
         labels_dtype = self.validation_examples["labels"][0].dtype
         predictions_dtype = self.validation_examples["outputs"][0].dtype
@@ -448,15 +439,9 @@ class BaseModelModule(pl.LightningModule):
             if self.parcel_loss:
                 predictions[labels == 0] = CLASS_LABEL_IGNORED  # 'ignored' class
                 error_pixels[labels == 0] = CLASS_LABEL_IGNORED  # 'ignored' class
-            ground_truth_mask = {
-                "ground_truth": dict(mask_data=labels, class_labels=class_labels)
-            }
-            prediction_mask = {
-                "prediction": dict(mask_data=predictions, class_labels=class_labels)
-            }
-            error_mask = {
-                "error": dict(mask_data=error_pixels, class_labels=error_labels)
-            }
+            ground_truth_mask = {"ground_truth": dict(mask_data=labels, class_labels=class_labels)}
+            prediction_mask = {"prediction": dict(mask_data=predictions, class_labels=class_labels)}
+            error_mask = {"error": dict(mask_data=error_pixels, class_labels=error_labels)}
             images.append(wandb.Image(
                 pixels_scaled,
                 caption=f"({i_patch + 1}) {patch_name}",
@@ -476,180 +461,3 @@ class BaseModelModule(pl.LightningModule):
             )
 
         return examples_table, images
-
-    def on_test_epoch_end(self):
-        self.confusion_matrix = self.confusion_matrix.cpu().detach().numpy()
-
-        self.confusion_matrix = self.confusion_matrix[1:, 1:]  # Drop zero label
-
-        # Calculate metrics and confusion matrix
-        fp = self.confusion_matrix.sum(axis=0) - np.diag(self.confusion_matrix)
-        fn = self.confusion_matrix.sum(axis=1) - np.diag(self.confusion_matrix)
-        tp = np.diag(self.confusion_matrix)
-        tn = self.confusion_matrix.sum() - (fp + fn + tp)
-
-        # Sensitivity, hit rate, recall, or true positive rate
-        tpr = tp / (tp + fn)
-        # Specificity or true negative rate
-        tnr = tn / (tn + fp)
-        # Precision or positive predictive value
-        ppv = tp / (tp + fp)
-        # Negative predictive value
-        npv = tn / (tn + fn)
-        # Fall out or false positive rate
-        fpr = fp / (fp + tn)
-        # False negative rate
-        fnr = fn / (tp + fn)
-        # False discovery rate
-        fdr = fp / (tp + fp)
-        # F1-score
-        f1 = (2 * ppv * tpr) / (ppv + tpr)
-
-        # Overall accuracy
-        accuracy = (tp + tn) / (tp + fp + fn + tn)
-
-        # Export metrics in text file
-        metrics_file = self.run_dir / f"evaluation_metrics_epoch{self.checkpoint_epoch}.csv"
-
-        # Delete file if present
-        metrics_file.unlink(missing_ok=True)
-
-        with open(metrics_file, "a") as f:
-            row = 'Class'
-            for k in sorted(self.linear_encoder.keys()):
-                if k == 0: continue
-                row += f',{k} ({self.crop_encoding[k]})'
-            f.write(row + '\n')
-
-            row = 'tn'
-            for i in tn:
-                row += f',{i}'
-            f.write(row + '\n')
-
-            row = 'tp'
-            for i in tp:
-                row += f',{i}'
-            f.write(row + '\n')
-
-            row = 'fn'
-            for i in fn:
-                row += f',{i}'
-            f.write(row + '\n')
-
-            row = 'fp'
-            for i in fp:
-                row += f',{i}'
-            f.write(row + '\n')
-
-            row = "specificity"
-            for i in tnr:
-                row += f',{i:.4f}'
-            f.write(row + '\n')
-
-            row = "precision"
-            for i in ppv:
-                row += f',{i:.4f}'
-            f.write(row + '\n')
-
-            row = "recall"
-            for i in tpr:
-                row += f',{i:.4f}'
-            f.write(row + '\n')
-
-            row = "accuracy"
-            for i in accuracy:
-                row += f',{i:.4f}'
-            f.write(row + '\n')
-
-            row = "f1"
-            for i in f1:
-                row += f',{i:.4f}'
-            f.write(row + '\n')
-
-            row = 'weighted macro-f1'
-            class_samples = self.confusion_matrix.sum(axis=1)
-            weighted_f1 = ((f1 * class_samples) / class_samples.sum()).sum()
-            f.write(row + f',{weighted_f1:.4f}\n')
-
-        # Normalize each row of the confusion matrix because class imbalance is
-        # high and visualization is difficult
-        row_mins = self.confusion_matrix.min(axis=1)
-        row_maxs = self.confusion_matrix.max(axis=1)
-        cm_norm = (self.confusion_matrix - row_mins[:, None]) / (row_maxs[:, None] - row_mins[:, None])
-
-        # Export Confusion Matrix
-
-        # Replace invalid values with 0
-        self.confusion_matrix = np.nan_to_num(self.confusion_matrix, nan=0.0, posinf=0.0, neginf=0.0)
-
-        # Create plot
-        fig, ax = plt.subplots(1, 1, figsize=(7, 7))
-        sns.heatmap(self.confusion_matrix, annot=False, ax=ax, cmap="Blues", fmt="g")
-
-        # Labels, title and ticks
-        label_font = {'size': '18'}
-        ax.set_xlabel('Predicted labels', fontdict=label_font, labelpad=10)
-        ax.set_ylabel('Observed labels', fontdict=label_font, labelpad=10)
-
-        ax.set_xticks(list(np.arange(0.5, len(self.linear_encoder.keys()) - 1 + 0.5)))
-        ax.set_yticks(list(np.arange(0.5, len(self.linear_encoder.keys()) - 1 + 0.5)))
-
-        ax.xaxis.set_ticks_position('none')
-        ax.yaxis.set_ticks_position('none')
-
-        ax.set_xticklabels([f'{self.crop_encoding[k]} ({k})' for k in sorted(self.linear_encoder.keys()) if k != 0],
-                           fontsize=8, rotation='vertical')
-        ax.set_yticklabels([f'{self.crop_encoding[k]} ({k})' for k in sorted(self.linear_encoder.keys()) if k != 0],
-                           fontsize=8, rotation='horizontal')
-
-        ax.tick_params(axis='both', which='major')
-
-        title_font = {'size': '21'}
-        ax.set_title('Confusion Matrix', fontdict=title_font)
-
-        for i in range(len(self.linear_encoder.keys()) - 1):
-            ax.add_patch(Rectangle((i, i), 1, 1, fill=False, edgecolor='red', lw=2))
-
-        plt.savefig(self.run_dir / f'confusion_matrix_epoch{self.checkpoint_epoch}.png', dpi=fig.dpi,
-                    bbox_inches='tight', pad_inches=0.5)
-
-        np.save(self.run_dir / f'cm_epoch{self.checkpoint_epoch}.npy', self.confusion_matrix)
-
-        # Export normalized Confusion Matrix
-
-        # Replace invalid values with 0
-        cm_norm = np.nan_to_num(cm_norm, nan=0.0, posinf=0.0, neginf=0.0)
-
-        # Create plot
-        fig, ax = plt.subplots(1, 1, figsize=(7, 7))
-        sns.heatmap(cm_norm, annot=False, ax=ax, cmap="Blues", fmt="g")
-
-        # Labels, title and ticks
-        label_font = {'size': '18'}
-        ax.set_xlabel('Predicted labels', fontdict=label_font, labelpad=10)
-        ax.set_ylabel('Observed labels', fontdict=label_font, labelpad=10)
-
-        ax.set_xticks(list(np.arange(0.5, len(self.linear_encoder.keys()) - 1 + 0.5)))
-        ax.set_yticks(list(np.arange(0.5, len(self.linear_encoder.keys()) - 1 + 0.5)))
-
-        ax.xaxis.set_ticks_position('none')
-        ax.yaxis.set_ticks_position('none')
-
-        ax.set_xticklabels([f'{self.crop_encoding[k]} ({k})' for k in sorted(self.linear_encoder.keys()) if k != 0],
-                           fontsize=8, rotation='vertical')
-        ax.set_yticklabels([f'{self.crop_encoding[k]} ({k})' for k in sorted(self.linear_encoder.keys()) if k != 0],
-                           fontsize=8, rotation='horizontal')
-
-        ax.tick_params(axis='both', which='major')
-
-        title_font = {'size': '21'}
-        ax.set_title('Confusion Matrix', fontdict=title_font)
-
-        for i in range(len(self.linear_encoder.keys()) - 1):
-            ax.add_patch(Rectangle((i, i), 1, 1, fill=False, edgecolor='red', lw=2))
-
-        plt.savefig(self.run_dir / f'confusion_matrix_norm_epoch{self.checkpoint_epoch}.png', dpi=fig.dpi,
-                    bbox_inches='tight', pad_inches=0.5)
-
-        np.save(self.run_dir / f'cm_norm_epoch{self.checkpoint_epoch}.npy', self.confusion_matrix)
-        pickle.dump(self.linear_encoder, open(self.run_dir / f'linear_encoder_epoch{self.checkpoint_epoch}.pkl', 'wb'))

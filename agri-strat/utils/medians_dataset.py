@@ -5,6 +5,7 @@ import pandas as pd
 from torch.utils.data import IterableDataset, get_worker_info
 
 from utils.constants import MEDIANS_DTYPE
+from utils.label_encoder import LabelEncoder
 from utils.medians_metadata import MediansMetadata
 
 # Divider for normalizing tiff data to [0-1] range
@@ -20,7 +21,7 @@ class MediansDataset(IterableDataset):
             medians_subdir: Path,
             medians_metadata: MediansMetadata,
             bins_range: tuple[int, int],
-            linear_encoder: dict,
+            label_encoder: LabelEncoder,
             requires_norm: bool,
             shuffle: bool = False,
             batched: bool = True,  # When true, each sample is a batch of subpatches
@@ -31,7 +32,7 @@ class MediansDataset(IterableDataset):
         self.medians_subdir = medians_subdir
         self.medians_metadata = medians_metadata
         self.bins_range = bins_range
-        self.linear_encoder = linear_encoder
+        self.label_encoder = label_encoder
         self.requires_norm = requires_norm
         self.batched = batched
         self.skip_zero_label_subpatches = skip_zero_label_subpatches
@@ -81,9 +82,8 @@ class MediansDataset(IterableDataset):
                 medians = medians / NORMALIZATION_DIV
 
             # Map labels to 0-len(unique(crop_id)) see config
-            # labels = np.vectorize(self.linear_encoder.get)(labels)
             labels_mapped = np.zeros_like(labels)
-            for crop_id, linear_id in self.linear_encoder.items():
+            for crop_id, linear_id in self.label_encoder.dataset_to_model.items():
                 labels_mapped[labels == crop_id] = linear_id
             # All classes NOT in the linear encoder's values are already mapped to 0
             labels_mapped = labels_mapped.astype(np.int64)

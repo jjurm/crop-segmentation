@@ -7,6 +7,7 @@ import wandb
 from torch.utils.data import DataLoader
 from torch.utils.data.datapipes.iter.utils import IterableWrapperIterDataPipe
 
+from utils.label_encoder import LabelEncoder
 from utils.medians_dataset import MediansDataset
 from utils.medians_metadata import MediansMetadata
 
@@ -36,7 +37,7 @@ class MediansDataModule(pl.LightningDataModule):
             medians_path: str,
             split_artifact: str,
             bins_range: tuple[int, int],
-            linear_encoder: dict,
+            label_encoder: LabelEncoder,
             requires_norm: bool,
             batch_size: int,
             num_workers: int,
@@ -50,7 +51,7 @@ class MediansDataModule(pl.LightningDataModule):
         self.medians_path = medians_path
         self.split_artifact = split_artifact
         self.bins_range = bins_range
-        self.linear_encoder = linear_encoder
+        self.label_encoder = label_encoder
         self.requires_norm = requires_norm
         self.batch_size = batch_size
         self.cache_dataset = cache_dataset
@@ -102,7 +103,7 @@ class MediansDataModule(pl.LightningDataModule):
             'medians_subdir': self.medians_subdir,
             'medians_metadata': self.metadata,
             'bins_range': self.bins_range,
-            'linear_encoder': self.linear_encoder,
+            'label_encoder': self.label_encoder,
             'requires_norm': self.requires_norm,
         }
 
