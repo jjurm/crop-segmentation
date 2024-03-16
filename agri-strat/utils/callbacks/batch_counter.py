@@ -1,6 +1,7 @@
 from typing import Any
 
 import lightning as pl
+import wandb
 
 from utils.medians_datamodule import MediansDataModule
 
@@ -80,11 +81,14 @@ class BatchCounterCallback(pl.Callback):
 
     def on_train_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self.train_true_batch_count = self.train_batch_counter
+        wandb.run.summary["train_true_batch_count"] = self.train_true_batch_count
 
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         if trainer.sanity_checking:
             return
         self.val_true_batch_count = self.val_batch_counter
+        wandb.run.summary["val_true_batch_count"] = self.val_true_batch_count
 
     def on_test_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self.test_true_batch_count = self.test_batch_counter
+        wandb.run.summary["test_true_batch_count"] = self.test_true_batch_count
