@@ -18,6 +18,7 @@ from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 import config as experiment_config
 import wandb
 from models.base import BaseModelModule
+from utils.callbacks.batch_counter import BatchCounterCallback
 from utils.custom_progress_bar import CustomProgressBar
 from utils.custom_wandb_logger import CustomWandbLogger
 from utils.exception_tracker_callback import ExceptionTrackerCallback
@@ -189,6 +190,7 @@ def main():
         model = create_model(run.config, datamodule)
 
         callbacks = [
+            BatchCounterCallback(datamodule),
             ExceptionTrackerCallback(),
             LearningRateMonitor(),
             ModelCheckpoint(

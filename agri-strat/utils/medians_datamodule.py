@@ -1,3 +1,4 @@
+from math import ceil
 from pathlib import Path
 
 import lightning.pytorch as pl
@@ -8,6 +9,7 @@ from torch.utils.data.datapipes.iter.utils import IterableWrapperIterDataPipe
 
 from utils.medians_dataset import MediansDataset
 from utils.medians_metadata import MediansMetadata
+
 
 # TODO consider using the following function to have
 # - different seed for each epoch
@@ -60,6 +62,7 @@ class MediansDataModule(pl.LightningDataModule):
             'num_workers': num_workers,
             'pin_memory': True,
             'persistent_workers': True,
+            'drop_last': False,
         }
 
         # prepare_data() will set these
@@ -122,7 +125,7 @@ class MediansDataModule(pl.LightningDataModule):
             raise ValueError(f"stage = {stage}, expected: 'fit' or 'test'")
 
     def train_dataloader(self):
-        dataloader = DataLoader(self.dataset_train, prefetch_factor=2*self.batch_size, **self.dataloader_args)
+        dataloader = DataLoader(self.dataset_train, prefetch_factor=2 * self.batch_size, **self.dataloader_args)
         pipe = IterableWrapperIterDataPipe(dataloader, deepcopy=False) \
             .shuffle(buffer_size=self.shuffle_buffer_num_patches * self.metadata.num_subpatches_per_patch) \
             .batch(batch_size=self.batch_size).collate()
@@ -147,3 +150,16 @@ class MediansDataModule(pl.LightningDataModule):
         Returns a list of bands that the model should be created for.
         """
         return self.metadata.bands
+
+    def get_approx_num_batches(self, split: str) -> int:
+        """
+        If skip_zero_label_subpatches is True, the number of batches is not known in advance, so we return an upper bound.
+        Otherwise, returns the exact number of batches.
+        :param split: train/val/test
+        """
+        approx_num_samples = self.patch_counts[split] * self.metadata.num_subpatches_per_patch
+        if self.dataloader_args.get("drop_last", False):
+            approx_num_batches = approx_num_samples // self.batch_size
+        else:
+            approx_num_batches = ceil(approx_num_samples / self.batch_size)
+        return approx_num_batches

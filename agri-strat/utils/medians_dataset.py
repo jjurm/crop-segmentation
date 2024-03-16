@@ -116,9 +116,3 @@ class MediansDataset(IterableDataset):
 
     def get_labels_shape(self):
         return *self.medians_metadata.img_size,
-
-    def __len__(self):
-        """
-        Computes the total number of produced sequences
-        """
-        return self.patch_count * self.medians_metadata.num_subpatches_per_patch
