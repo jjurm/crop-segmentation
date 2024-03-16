@@ -96,8 +96,8 @@ class BaseModelModule(pl.LightningModule):
         # Loss function
         if weighted_loss:
             class_weights_weighted = class_weights_weight * class_weights + \
-                            (1 - class_weights_weight) * torch.ones(self.num_classes)
-            class_weights_weighted = class_weights.float().cuda()
+                                     (1 - class_weights_weight) * torch.ones(self.num_classes)
+            class_weights_weighted = class_weights_weighted.float().cuda()
         else:
             class_weights_weighted = None
 
@@ -381,8 +381,11 @@ class BaseModelModule(pl.LightningModule):
     def _get_preview_table_and_samples(self):
         # This should hold for all validation epochs with enough of examples
         # and only fail for cases like sanity check or a devtest run
-        assert len(self.validation_examples[
-                       "patch"]) == NUM_VALIDATION_PATCH_EXAMPLES * self.medians_metadata.num_subpatches_per_patch
+        needed_example = NUM_VALIDATION_PATCH_EXAMPLES * self.medians_metadata.num_subpatches_per_patch
+        assert len(self.validation_examples["patch"]) == needed_example, (
+            f"Not enough subpatches for validation examples: got {len(self.validation_examples['patch'])} < "
+            f"{needed_example} wanted"
+        )
 
         examples_table = wandb.Table(columns=["patch", "inputs", "ground truth", "predictions", "errors"])
         rgb_band_indices = [self.bands.index(band) for band in ["B04", "B03", "B02"]]
