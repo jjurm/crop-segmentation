@@ -105,6 +105,7 @@ class BaseModelModule(pl.LightningModule):
             relative_class_frequencies=relative_class_frequencies,
             **kwargs)
 
+        self.num_samples_seen = 0
         self.num_pixels_seen = 0
         self.validation_examples = None
         self.validation_patch_scores = None
@@ -186,10 +187,12 @@ class BaseModelModule(pl.LightningModule):
         }]
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        checkpoint["samples_seen"] = self.num_samples_seen
         checkpoint["pixels_seen"] = self.num_pixels_seen
 
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
-        self.num_pixels_seen = checkpoint["pixels_seen"]
+        self.num_samples_seen = n if (n := checkpoint["samples_seen"]) is not None else 0
+        self.num_pixels_seen = n if (n := checkpoint["pixels_seen"]) is not None else 0
 
     def training_step(self, batch, batch_idx):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
@@ -202,12 +205,13 @@ class BaseModelModule(pl.LightningModule):
         self.log('train/loss_nll_parcel', loss_nll_parcel,
                  on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
 
+        self.num_samples_seen += batch_size
         if self.parcel_loss:
             self.num_pixels_seen += (labels != 0).sum().item()
         else:
             self.num_pixels_seen += batch_size * labels.shape[1] * labels.shape[2]
         self.log_dict({
-            'trainer/samples_seen': self.global_step * batch_size,
+            'trainer/samples_seen': self.num_samples_seen,
             'trainer/pixels_seen': self.num_pixels_seen,
         }, on_step=True, on_epoch=False, logger=True, batch_size=batch_size)
 
