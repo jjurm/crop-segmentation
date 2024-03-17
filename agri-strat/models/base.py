@@ -9,7 +9,8 @@ import torch.nn as nn
 import torch.optim as optim
 import wandb
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, LRScheduler
-from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, MulticlassConfusionMatrix
+from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, MulticlassConfusionMatrix, \
+    MulticlassPrecision, MulticlassRecall
 
 from models.convstar import ConvSTAR
 from models.unet import UNet
@@ -85,6 +86,7 @@ class BaseModelModule(pl.LightningModule):
         else:
             class_weights_weighted = None
 
+        # Global metrics
         self.loss_nll = nn.NLLLoss(weight=class_weights_weighted)
         self.loss_nll_parcel = nn.NLLLoss(weight=class_weights_weighted, ignore_index=0)
         self.metric_acc = MulticlassAccuracy(num_classes=num_classes, average="macro")
@@ -95,6 +97,10 @@ class BaseModelModule(pl.LightningModule):
         self.metric_f1ma_parcel = MulticlassF1Score(num_classes=num_classes, average="macro", ignore_index=0)
         self.confusion_matrix = MulticlassConfusionMatrix(num_classes=num_classes, normalize="none",
                                                           ignore_index=0 if parcel_loss else None)
+        # Per-class metrics
+        self.metric_class_precision = MulticlassPrecision(average=None, num_classes=num_classes)
+        self.metric_class_recall = MulticlassRecall(average=None, num_classes=num_classes)
+        self.metric_class_f1 = MulticlassF1Score(average=None, num_classes=num_classes)
 
         self.run_dir = Path(wandb.run.dir)
 
@@ -234,6 +240,7 @@ class BaseModelModule(pl.LightningModule):
         batch_size = inputs.shape[0]
         output = self.model(inputs)
 
+        # Loss
         loss_nll = self.loss_nll(output, labels)
         loss_nll_parcel = self.loss_nll_parcel(output, labels)
         if not torch.isnan(loss_nll):
@@ -243,6 +250,7 @@ class BaseModelModule(pl.LightningModule):
             self.log('val/loss_nll_parcel', loss_nll_parcel,
                      on_step=False, on_epoch=True, logger=True, batch_size=batch_size)
 
+        # Global metrics
         acc = self.metric_acc(output, labels)
         f1w = self.metric_f1w(output, labels)
         f1ma = self.metric_f1ma(output, labels)
@@ -251,6 +259,12 @@ class BaseModelModule(pl.LightningModule):
         f1ma_parcel = self.metric_f1ma_parcel(output, labels)
         self.confusion_matrix.update(output, labels)
 
+        # Per-class metrics
+        self.metric_class_precision.update(output, labels)
+        self.metric_class_recall.update(output, labels)
+        self.metric_class_f1.update(output, labels)
+
+        # Per-patch metrics
         self._collect_per_patch_scores(batch, output)
         self._collect_preview_samples(batch, output)
 
@@ -316,6 +330,7 @@ class BaseModelModule(pl.LightningModule):
     def on_validation_epoch_end(self) -> None:
         confusion_matrix = self.confusion_matrix.compute()
         wandb_cm = self._get_wandb_confusion_matrix(confusion_matrix)
+        class_scores_df = self._compute_class_scores_table()
         patch_scores_df = self._compute_per_patch_scores()
 
         if self.trainer.state.stage != "sanity_check":
@@ -325,6 +340,7 @@ class BaseModelModule(pl.LightningModule):
                 "confusion_matrix": wandb_cm,
                 "examples": images,
                 "examples_table": examples_table,
+                "class_scores": wandb.Table(dataframe=class_scores_df),
                 "patch_scores": wandb.Table(dataframe=patch_scores_df),
             })
 
@@ -353,6 +369,19 @@ class BaseModelModule(pl.LightningModule):
             fields,
             {"title": f"Confusion Matrix"},
         )
+
+    def _compute_class_scores_table(self):
+        class_precision = self.metric_class_precision.compute().cpu().numpy()
+        class_recall = self.metric_class_recall.compute().cpu().numpy()
+        class_f1 = self.metric_class_f1.compute().cpu().numpy()
+        start_i = int(self.parcel_loss)
+        per_class_scores_df = pd.DataFrame({
+            "class": self.label_encoder.class_names[start_i:],
+            "precision": class_precision[start_i:],
+            "recall": class_recall[start_i:],
+            "f1": class_f1[start_i:],
+        }, index=range(start_i, self.label_encoder.num_classes))
+        return per_class_scores_df
 
     def _compute_per_patch_scores(self):
         for patch_path, scores in self.validation_patch_scores.items():
