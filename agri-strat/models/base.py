@@ -42,8 +42,8 @@ class BaseModelModule(pl.LightningModule):
             class_weights_weight: float,  # interpolate between class weights and uniform weights
             bands: list[str],
             medians_metadata: MediansMetadata,
+            class_counts: dict[int, int],
             parcel_loss=False,
-            class_counts: dict[int, int] = None,
             **kwargs,
     ):
         """
@@ -330,7 +330,7 @@ class BaseModelModule(pl.LightningModule):
     def on_validation_epoch_end(self) -> None:
         confusion_matrix = self.confusion_matrix.compute()
         wandb_cm = self._get_wandb_confusion_matrix(confusion_matrix)
-        class_scores_df = self._compute_class_scores_table()
+        class_scores_df = self._compute_class_scores_table(confusion_matrix)
         patch_scores_df = self._compute_per_patch_scores()
 
         if self.trainer.state.stage != "sanity_check":
@@ -370,13 +370,15 @@ class BaseModelModule(pl.LightningModule):
             {"title": f"Confusion Matrix"},
         )
 
-    def _compute_class_scores_table(self):
+    def _compute_class_scores_table(self, confusion_matrix):
+        start_i = int(self.parcel_loss)
+        class_counts = confusion_matrix.sum(axis=1)
         class_precision = self.metric_class_precision.compute().cpu().numpy()
         class_recall = self.metric_class_recall.compute().cpu().numpy()
         class_f1 = self.metric_class_f1.compute().cpu().numpy()
-        start_i = int(self.parcel_loss)
         per_class_scores_df = pd.DataFrame({
             "class": self.label_encoder.class_names[start_i:],
+            "pixel_count": class_counts,  # already ignores class 0 if parcel_loss
             "precision": class_precision[start_i:],
             "recall": class_recall[start_i:],
             "f1": class_f1[start_i:],
