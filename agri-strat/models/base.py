@@ -283,6 +283,12 @@ class BaseModelModule(pl.LightningModule):
 
     def _collect_per_patch_scores(self, batch, output):
         for i, patch_path in enumerate(batch["patch_path"]):
+            n_pixels = int(
+                (batch["labels"][i] != 0).sum().item() if self.parcel_loss else batch["labels"][i].shape[0] *
+                                                                                batch["labels"][i].shape[1])
+            if n_pixels == 0:
+                continue  # This is to avoid ending up with patches with no pixels of interest
+
             if patch_path not in self.validation_patch_scores:
                 self.validation_patch_scores[patch_path] = {
                     "acc": MulticlassAccuracy(num_classes=self.label_encoder.num_classes,
@@ -301,9 +307,6 @@ class BaseModelModule(pl.LightningModule):
                 }
             scores = self.validation_patch_scores[patch_path]
 
-            n_pixels = int(
-                (batch["labels"][i] != 0).sum().item() if self.parcel_loss else batch["labels"][i].shape[0] *
-                                                                                batch["labels"][i].shape[1])
             outputs_ = output[i].unsqueeze(0)
             labels_ = batch["labels"][i].unsqueeze(0)
             scores["acc"].update(outputs_, labels_)
