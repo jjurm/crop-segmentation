@@ -101,9 +101,12 @@ class BaseModelModule(pl.LightningModule):
         self.confusion_matrix = MulticlassConfusionMatrix(num_classes=num_classes, normalize="none",
                                                           ignore_index=0 if parcel_loss else None)
         # Per-class metrics
-        self.metric_class_precision = MulticlassPrecision(average=None, num_classes=num_classes)
-        self.metric_class_recall = MulticlassRecall(average=None, num_classes=num_classes)
-        self.metric_class_f1 = MulticlassF1Score(average=None, num_classes=num_classes)
+        self.metric_class_precision = MulticlassPrecision(average=None, num_classes=num_classes,
+                                                          ignore_index=0 if parcel_loss else None)
+        self.metric_class_recall = MulticlassRecall(average=None, num_classes=num_classes,
+                                                    ignore_index=0 if parcel_loss else None)
+        self.metric_class_f1 = MulticlassF1Score(average=None, num_classes=num_classes,
+                                                 ignore_index=0 if parcel_loss else None)
 
         self.run_dir = Path(wandb.run.dir)
 
