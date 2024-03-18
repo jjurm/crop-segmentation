@@ -372,7 +372,7 @@ class BaseModelModule(pl.LightningModule):
                 "confusion_matrix": wandb_cm,
                 "examples": images,
                 "examples_table": examples_table,
-                "class_scores": wandb.Table(dataframe=class_scores_df),
+                "class_scores": wandb.Table(dataframe=class_scores_df, allow_mixed_types=True),
                 "patch_scores": wandb.Table(dataframe=patch_scores_df),
             })
 
@@ -404,13 +404,13 @@ class BaseModelModule(pl.LightningModule):
 
     def _compute_class_scores_table(self, confusion_matrix_cpu):
         start_i = int(self.parcel_loss)
-        class_counts = confusion_matrix_cpu.sum(axis=1).numpy()
+        class_counts = confusion_matrix_cpu.sum(axis=1).numpy()  # class 0 is missing if parcel_loss
         class_precision = self.metric_class_precision.compute().cpu().numpy()
         class_recall = self.metric_class_recall.compute().cpu().numpy()
         class_f1 = self.metric_class_f1.compute().cpu().numpy()
         per_class_scores_df = pd.DataFrame({
             "class": self.label_encoder.class_names[start_i:],
-            "pixel_count": class_counts,  # already ignores class 0 if parcel_loss
+            "pixel_count": ([float("nan")] if self.parcel_loss else []) + class_counts.tolist(),
             "precision": class_precision[start_i:],
             "recall": class_recall[start_i:],
             "f1": class_f1[start_i:],
