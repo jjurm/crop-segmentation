@@ -95,6 +95,9 @@ class BaseModelModule(pl.LightningModule):
         self.metric_f1w_parcel = MulticlassF1Score(num_classes=num_classes, average="weighted", ignore_index=0)
         self.metric_f1ma = MulticlassF1Score(num_classes=num_classes, average="macro")
         self.metric_f1ma_parcel = MulticlassF1Score(num_classes=num_classes, average="macro", ignore_index=0)
+        self.metric_crop3_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="macro", ignore_index=0)
+        self.metric_crop3_f1w_parcel = MulticlassF1Score(num_classes=num_classes, average="weighted", ignore_index=0)
+        self.metric_crop3_f1ma_parcel = MulticlassF1Score(num_classes=num_classes, average="macro", ignore_index=0)
         self.confusion_matrix = MulticlassConfusionMatrix(num_classes=num_classes, normalize="none",
                                                           ignore_index=0 if parcel_loss else None)
         # Per-class metrics
@@ -160,6 +163,9 @@ class BaseModelModule(pl.LightningModule):
             wandb.define_metric("val/f1w_parcel", summary="max,mean,last")
             wandb.define_metric("val/f1ma", summary="max,mean,last")
             wandb.define_metric("val/f1ma_parcel", summary="max,mean,last")
+            wandb.define_metric("val/crop3_acc_parcel", summary="max,mean,last")
+            wandb.define_metric("val/crop3_f1w_parcel", summary="max,mean,last")
+            wandb.define_metric("val/crop3_f1ma_parcel", summary="max,mean,last")
 
         # Log gradients
         if stage == "fit":
@@ -259,6 +265,14 @@ class BaseModelModule(pl.LightningModule):
         f1ma_parcel = self.metric_f1ma_parcel(output, labels)
         self.confusion_matrix.update(output, labels)
 
+        # Crop3 metrics
+        img_size_h, img_size_w = self.medians_metadata.img_size
+        output_cropped = output[:, :, 3:img_size_h - 3, 3:img_size_w - 3]
+        labels_cropped = labels[:, 3:img_size_h - 3, 3:img_size_w - 3]
+        crop3_acc_parcel = self.metric_crop3_acc_parcel(output_cropped, labels_cropped)
+        crop3_f1w_parcel = self.metric_crop3_f1w_parcel(output_cropped, labels_cropped)
+        crop3_f1ma_parcel = self.metric_crop3_f1ma_parcel(output_cropped, labels_cropped)
+
         # Per-class metrics
         self.metric_class_precision.update(output, labels)
         self.metric_class_recall.update(output, labels)
@@ -279,6 +293,9 @@ class BaseModelModule(pl.LightningModule):
         self.log_dict({
             'val/f1ma': f1ma,
             'val/f1ma_parcel': f1ma_parcel,
+            'val/crop3_acc_parcel': crop3_acc_parcel,
+            'val/crop3_f1w_parcel': crop3_f1w_parcel,
+            'val/crop3_f1ma_parcel': crop3_f1ma_parcel,
         }, on_step=False, on_epoch=True, logger=True, prog_bar=False, batch_size=batch_size)
 
     def _collect_per_patch_scores(self, batch, output):
@@ -303,6 +320,12 @@ class BaseModelModule(pl.LightningModule):
                                               average="macro").to(self.device),
                     "f1ma_parcel": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
                                                      average="macro", ignore_index=0).to(self.device),
+                    "crop3_acc_parcel": MulticlassAccuracy(num_classes=self.label_encoder.num_classes,
+                                                           average="macro", ignore_index=0).to(self.device),
+                    "crop3_f1w_parcel": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
+                                                          average="weighted", ignore_index=0).to(self.device),
+                    "crop3_f1ma_parcel": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
+                                                           average="macro", ignore_index=0).to(self.device),
                     "n_pixels": 0,
                 }
             scores = self.validation_patch_scores[patch_path]
@@ -315,6 +338,12 @@ class BaseModelModule(pl.LightningModule):
             scores["acc_parcel"].update(outputs_, labels_)
             scores["f1w_parcel"].update(outputs_, labels_)
             scores["f1ma_parcel"].update(outputs_, labels_)
+            img_size_h, img_size_w = self.medians_metadata.img_size
+            outputs_cropped = outputs_[:, :, 3:img_size_h - 3, 3:img_size_w - 3]
+            labels_cropped = labels_[:, 3:img_size_h - 3, 3:img_size_w - 3]
+            scores["crop3_acc_parcel"].update(outputs_cropped, labels_cropped)
+            scores["crop3_f1w_parcel"].update(outputs_cropped, labels_cropped)
+            scores["crop3_f1ma_parcel"].update(outputs_cropped, labels_cropped)
             scores["n_pixels"] += n_pixels
 
     def _collect_preview_samples(self, batch, output):
@@ -396,6 +425,9 @@ class BaseModelModule(pl.LightningModule):
             scores["acc_parcel"] = scores["acc_parcel"].compute().item()
             scores["f1w_parcel"] = scores["f1w_parcel"].compute().item()
             scores["f1ma_parcel"] = scores["f1ma_parcel"].compute().item()
+            scores["crop3_acc_parcel"] = scores["crop3_acc_parcel"].compute().item()
+            scores["crop3_f1w_parcel"] = scores["crop3_f1w_parcel"].compute().item()
+            scores["crop3_f1ma_parcel"] = scores["crop3_f1ma_parcel"].compute().item()
         patch_scores_df = pd.DataFrame.from_dict(self.validation_patch_scores, orient="index").reset_index()
         csv_file = self.run_dir / "patch_scores.csv"
         patch_scores_df.to_csv(csv_file, index=False)
