@@ -360,9 +360,9 @@ class BaseModelModule(pl.LightningModule):
                 output[:(want_examples - has_examples)].cpu().detach().numpy())
 
     def on_validation_epoch_end(self) -> None:
-        confusion_matrix = self.confusion_matrix.compute()
-        wandb_cm = self._get_wandb_confusion_matrix(confusion_matrix)
-        class_scores_df = self._compute_class_scores_table(confusion_matrix)
+        confusion_matrix_cpu = self.confusion_matrix.compute().cpu()
+        wandb_cm = self._get_wandb_confusion_matrix(confusion_matrix_cpu)
+        class_scores_df = self._compute_class_scores_table(confusion_matrix_cpu)
         patch_scores_df = self._compute_per_patch_scores()
 
         if self.trainer.state.stage != "sanity_check":
@@ -379,7 +379,7 @@ class BaseModelModule(pl.LightningModule):
         self.validation_examples = None
         self.validation_patch_scores = None
 
-    def _get_wandb_confusion_matrix(self, confusion_matrix):
+    def _get_wandb_confusion_matrix(self, confusion_matrix_cpu):
         data = []
         classes = range(self.confusion_matrix.num_classes)[int(self.parcel_loss):]
         for i in classes:
@@ -387,7 +387,7 @@ class BaseModelModule(pl.LightningModule):
                 data.append([
                     self.label_encoder.class_names[i],
                     self.label_encoder.class_names[j],
-                    confusion_matrix[i, j],
+                    confusion_matrix_cpu[i, j].item(),
                 ])
 
         fields = {
@@ -402,9 +402,9 @@ class BaseModelModule(pl.LightningModule):
             {"title": f"Confusion Matrix"},
         )
 
-    def _compute_class_scores_table(self, confusion_matrix):
+    def _compute_class_scores_table(self, confusion_matrix_cpu):
         start_i = int(self.parcel_loss)
-        class_counts = confusion_matrix.sum(axis=1)
+        class_counts = confusion_matrix_cpu.sum(axis=1).numpy()
         class_precision = self.metric_class_precision.compute().cpu().numpy()
         class_recall = self.metric_class_recall.compute().cpu().numpy()
         class_f1 = self.metric_class_f1.compute().cpu().numpy()
