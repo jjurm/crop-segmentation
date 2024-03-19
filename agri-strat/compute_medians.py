@@ -195,7 +195,7 @@ def main():
 
         print("Listing patches...")
         netcdf_path = Path(run.config["netcdf_path"])
-        medians_path = os.environ.get("MEDIANS_PATH", "dataset/medians")
+        medians_path = run.config["medians_path"] or os.environ.get("MEDIANS_PATH", "dataset/medians")
         jobs = []
         patches_generator = netcdf_path.glob('**/*.nc')
         if run.config["limit_patches"] is not None:
