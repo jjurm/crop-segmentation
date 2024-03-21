@@ -1,22 +1,20 @@
 import argparse
 import os
+import urllib.request
 from pathlib import Path
 
-import pandas as pd
 import geopandas as gpd
-
-import wandb
 import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-import urllib.request
+import wandb
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--split_artifact", type=str, required=True, help="Artifact of the type 'split'.")
-    parser.add_argument("--dem_dir", type=Path, required=False, default=Path("dataset/dem/srtm30"),
-                        help="Directory to save the SRTM30m data.")
+    parser.add_argument("--dem_path", type=Path, default=None, required=False,
+                        help="Directory to save the SRTM30m data. Default: $DEM_PATH or 'dataset/dem/srtm30'.")
     return parser.parse_args()
 
 
@@ -37,23 +35,27 @@ def main():
     print("Finding intersecting SRTM30m shapes...")
     srtm30_boxes["intersects"] = srtm30_boxes.intersects(splits_gdf.unary_union)
     intersecting_boxes = srtm30_boxes[srtm30_boxes["intersects"]]
-    intersecting_boxes = intersecting_boxes.iloc[:2]
+    intersecting_boxes = intersecting_boxes
 
     # Download the SRTM30m data
     print("Downloading SRTM30m data...")
     bearer_token = os.getenv("EARTHDATA_TOKEN")
+    if not bearer_token:
+        raise ValueError("Please set the EARTHDATA_TOKEN environment variable.")
     base_url = "https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/"
-    config["dem_dir"].mkdir(parents=True, exist_ok=True)
+    dem_path = config["dem_path"] or Path(os.getenv("DEM_PATH", "dataset/dem/srtm30"))
+    dem_path.mkdir(parents=True, exist_ok=True)
+    # noinspection PyArgumentList
     with logging_redirect_tqdm():
         for i, row in tqdm.tqdm(intersecting_boxes.iterrows(), total=len(intersecting_boxes)):
             url = base_url + row["dataFile"]
-            download_path = config["dem_dir"] / row["dataFile"]
+            download_path = dem_path / row["dataFile"]
             if not download_path.exists():
                 opener = urllib.request.build_opener()
                 opener.addheaders = [('Authorization', 'Bearer ' + bearer_token)]
                 urllib.request.install_opener(opener)
                 result = urllib.request.urlretrieve(url, download_path, data=None)
-                print(f"Downloaded {result[0]}: {result[1]['Content-Length']} bytes.")
+                print(f"Downloaded {result[0]}: {(result[1]['Content-Length'] // 1024) / 1024}MB.")
             else:
                 print(f"Skipped existing {download_path}.")
 

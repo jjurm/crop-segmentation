@@ -25,3 +25,5 @@ shapely
 geopandas
 torcheval
 cryptography
+rioxarray
+dask
