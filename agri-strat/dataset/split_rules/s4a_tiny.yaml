@@ -1,0 +1,11 @@
+# $schema: ../../schema/split_rules.schema.json
+rules:
+  - year: 2019
+    tile: "31TCJ"
+    target:
+      - target: train
+        split: 0.05
+      - target: val
+        split: 0.01
+      - target: test
+        split: 0.01

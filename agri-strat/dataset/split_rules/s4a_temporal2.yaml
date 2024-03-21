@@ -1,0 +1,11 @@
+# $schema: ../../schema/split_rules.schema.json
+# An easier version of s4a_temporal1, in that the model is trained on 2019 and tested on 2020 (whereas 2020 is a subset of 2019). Val/test split si naive random.
+rules:
+  - year: 2019
+    target: train
+  - year: 2020
+    target:
+      - target: val
+        split: 0.5
+      - target: test
+        split: 0.5

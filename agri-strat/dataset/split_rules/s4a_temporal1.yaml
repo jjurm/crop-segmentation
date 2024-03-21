@@ -1,0 +1,41 @@
+# $schema: ../../schema/split_rules.schema.json
+# Quite a harsh, very separated, split. Apart from the tile 31UDR in the north, test and val cover mostly
+# areas that are seen during training.
+rules:
+  - year: 2020
+    rules:
+      - tile: "31TBF"
+        target: test
+      - tile: "31TDG"
+        target: val
+      - tile: "31TCG"
+        rules:
+          - patch_x:
+              max: 14
+            target: test
+          - patch_x:
+              min: 15
+            target: val
+      - tile: "31TCF"
+        rules:
+          - patch_x:
+              max: 19
+            target: val
+          - patch_x:
+              min: 20
+            target: test
+      - tile: "31TDF"
+        target: test
+      - assert_none: true
+  - year: 2019
+    rules:
+      - tile: "31UDR"
+        rules:
+          - patch_x:
+              max: 14
+            target: test
+          - patch_x:
+              min: 15
+            target: val
+      - target: train
+      - assert_none: true

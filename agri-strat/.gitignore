@@ -1,5 +1,8 @@
 test/
-dataset/
 
 # Wandb artifacts
 artifacts/
+
+dataset/coco_files/
+dataset/medians/
+dataset/dem/srtm30/
