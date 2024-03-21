@@ -7,6 +7,7 @@ import shapely
 import wandb
 
 from utils.splits.patch.patch_processor import PatchProcessor
+from utils.splits.patch.stats_adder import PatchStatsAdder
 
 
 class PatchVisualizer(PatchProcessor):
@@ -14,7 +15,8 @@ class PatchVisualizer(PatchProcessor):
     Create a GPKG visualization of the patches in each split.
     """
 
-    def __init__(self):
+    def __init__(self, stats_adders: list[PatchStatsAdder]):
+        self.stats_adders = stats_adders
         self.geo_dfs = []
 
     def process(self, path: Path, target_split: str, netcdf_dataset: netCDF4.Dataset):
@@ -39,6 +41,10 @@ class PatchVisualizer(PatchProcessor):
         geo_df["patch_x"] = int(patch_x)
         geo_df["patch_y"] = int(patch_y)
         geo_df.to_crs("EPSG:4326", inplace=True)
+
+        for stats_adder in self.stats_adders:
+            geo_df = stats_adder.process(geo_df)
+
         self.geo_dfs.append(geo_df)
 
     def _create_gpkg(self):

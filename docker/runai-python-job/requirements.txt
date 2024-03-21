@@ -1,1 +1,4 @@
 cryptography
+rioxarray
+dask
+rasterstats

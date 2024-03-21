@@ -27,3 +27,4 @@ torcheval
 cryptography
 rioxarray
 dask
+rasterstats
