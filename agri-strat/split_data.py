@@ -6,6 +6,7 @@ Information about each patch (year, tile, patch_x, patch_y) is taken from the fi
 """
 
 import argparse
+import os
 from pathlib import Path
 
 import netCDF4
@@ -113,7 +114,8 @@ def main():
         # Process each patch
         stats_adders = []
         if run.config["elevation"]:
-            stats_adders.append(ElevationStats(run.config["dem_path"]))
+            dem_path = run.config["dem_path"] or Path(os.getenv("DEM_PATH", "dataset/dem/srtm30"))
+            stats_adders.append(ElevationStats(dem_path))
         patch_processors = [
             PixelCounter(),
             PatchVisualizer(stats_adders=stats_adders),

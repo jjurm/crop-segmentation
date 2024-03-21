@@ -45,6 +45,7 @@ class ElevationStats(PatchStatsAdder):
         stats = rasterstats.zonal_stats(
             vectors=geo_df,
             raster=self.array.values.squeeze(axis=0),
+            nodata=self.array.rio.nodata,
             affine=self.array.rio.transform(),
             prefix="elevation_",
             stats="mean std median",
