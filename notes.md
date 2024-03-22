@@ -5,10 +5,6 @@ Run the container
 ```bash
 kubectl apply -f runai/jupyter.yaml
 runai bash jupyter
-
-su -c "JUPYTER_PORT=8888 tmux -L lab" jovyan
-
-jupyter lab
 ```
 
 ## Python requirements
@@ -22,9 +18,6 @@ pip freeze > requirements-freeze.txt
 
 ## Train Wandb
 
-Artifact path:
-    split_rules -> `split_data.py` -> splits -> `compute_medians.py` -> medians[] -> `experiment.py` -> model
-
 generate a train/val/test split
 
 ```bash
@@ -37,7 +30,8 @@ python split_data.py \
   --split_rules_artifact s4a_temporal1:latest \
   --netcdf_path dataset/netcdf \
   --seed 0 \
-  --shuffle
+  --shuffle \
+  --elevation
   
 # Or generate a split from train/val/test COCO files
 python split_data.py \
@@ -57,6 +51,15 @@ python compute_medians.py \
   --num_workers 32
 ```
 
+upload label_encoder artifact
+
+```bash
+wandb artifact put \
+  --type label_encoder \
+  --name s4a_labels \
+  agri-strat/dataset/label_encoder/s4a_labels.yaml
+```
+
 training experiment
 
 ```bash
@@ -67,15 +70,90 @@ python experiment.py \
   --weighted_loss \
   --medians_artifact 1MS_B02B03B04B08_61x61:latest \
   --medians_path dataset/medians \
-  --split_artifact s4a_tiny_split:latest \
+  --split_artifact exp1_patches5000_strat_coco_split:latest \
   --bins_range 4 9 \
   --num_epochs 40 \
   --batch_size 32 \
   --learning_rate 1e-1 \
   --requires_norm \
-  --num_workers 16
+  --num_workers 8 \
+  --shuffle_buffer_num_patches 500 \
+  --skip_empty_subpatches
+```
 
-  #--parcel_loss \
+run docker image on kp machine for debugging
+
+```bash
+sudo docker run -it --rm --gpus all --env-file /home/jmicko/.env --shm-size=24gb --mount src=/home/jmicko/thesis-python/agri-strat,target=/workdir/agri-strat,type=bind --mount src=/home/jmicko/thesis-python/agri-strat/dataset/dem,target=/workdir/dataset/dem,type=bind --hostname $(hostname)-debug --env NODE_NAME=$(hostname)-debug jjurm/runai-python-job bash
+```
+
+
+## Launch experiments
+
+create a queue
+```python
+import wandb
+wandb.Api().create_run_queue(name="mixed", type="local-process", prioritization_mode="V0")
+```
+
+start an agent
+```bash
+# kp machine
+sudo docker run \
+  -it --rm \
+  --gpus all \
+  --env-file /home/jmicko/.env \
+  --shm-size=24gb \
+  --mount src=/home/jmicko/thesis-python/agri-strat/dataset/medians,target=/workdir/dataset/medians,type=bind \
+  --mount src=/home/jmicko/thesis-python/agri-strat/dataset/dem,target=/workdir/dataset/dem,type=bind \
+  --mount src=/home/jmicko/.config/wandb,target=/workdir/.config/wandb,type=bind \
+  --hostname $(hostname)-docker \
+  --env WANDB_CONFIG_DIR=/workdir/.config/wandb \
+  --env MEDIANS_PATH=/workdir/dataset/medians \
+  --env DEM_PATH=/workdir/dataset/dem \
+  --env NODE_NAME=$(hostname)-docker \
+  jjurm/runai-python-job \
+  wandb launch-agent
+
+# on runai
+runai submit \
+  --image jjurm/runai-python-job \
+  --working-dir /workdir \
+  --cpu 4 \
+  --gpu 0.2 \
+  --large-shm \
+  -e ENV_FILE=/myhome/.env \
+  -e WANDB_CONFIG_DIR=/myhome/.config/wandb \
+  -e MEDIANS_PATH=/mydata/studentmichele/juraj/thesis-python/agri-strat/dataset/medians \
+  -e DEM_PATH=/mydata/studentmichele/juraj/thesis-python/agri-strat/dataset/dem \
+  --backoff-limit 0 \
+  --preemptible \
+  --name wla1 \
+  -- wandb launch-agent
+```
+
+create a job
+```bash
+# git commit & push
+wandb job create -p agri-strat -e jjurm --name experiment --entry-point agri-strat/experiment.py --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
+
+wandb job create -p agri-strat -e jjurm --name split_data --entry-point agri-strat/split_data.py --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
+```
+
+launch the job
+```bash
+wandb launch -e jjurm -p agri-strat -q mixed --job jjurm/agri-strat/experiment:latest --priority medium --config wandb_jobs/experiment.json
+```
+
+split_artifacts: exp1_patches5000_strat_coco_split / s4a_temporal2_split / (temporal1)
+model: unet/convstar
+epochs: 40
+
+
+## Sweep
+
+```bash
+wandb launch-sweep wandb_jobs/sweep1.yaml --queue mixed --entity jjurm --project agri-strat
 ```
 
 
@@ -160,10 +238,27 @@ https://www.if-not-true-then-false.com/2018/install-nvidia-cuda-toolkit-on-fedor
 
 Also you can link gcc12 to CUDA bin directory to ease gcc version configuraition:
 
-ln -s /usr/bin/gcc-12.2/usr/local/cuda/bin/gcc
+ln -s /usr/bin/gcc-12.2 /usr/local/cuda/bin/gcc
 
 OR
 
 Do with RPM Fusion (does much of the work for you)
 https://rpmfusion.org/Configuration
 https://rpmfusion.org/Howto/NVIDIA
+
+CUDA:
+```
+sudo dnf install --allowerasing xorg-x11-drv-nvidia-cuda
+```
+
+
+## Ideas
+
+- consider adding dropout (maybe only if the val/loss starts increasing)
+- detect 'wrong weights' early (threshold on the accumulated loss after a couple batches)
+- start off a pretrained model
+
+- a compromise between iterative and map-style dataset:
+  - have multiple workers return whole patches
+  - combine into a single dataset
+  - convert patches into subpatches
