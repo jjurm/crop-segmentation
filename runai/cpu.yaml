@@ -1,19 +1,15 @@
 apiVersion: run.ai/v2alpha1
 kind: InteractiveWorkload
 metadata:
-  name: &name jupyter
+  name: &name jupyter-cpu
   namespace: runai-studentmichele-juraj
 spec:
   cpu:
-    value: "1"
-  gpu:
-    value: "0.2"
-  largeShm:
+    value: "32"
+  preemptible:
     value: true
   image:
-    value: jjurm/runai-interactive
-#  imagePullPolicy:
-#    value: Always
+    value: jjurm/runai-python-job
   exposedUrls:
     items:
       exposed-url-0:
@@ -33,7 +29,7 @@ spec:
   name:
     value: *name
   nodeType:
-    value: A100
+    value: "CPU"
   username:
     value: jmicko@student.ethz.ch
   workingDir:
