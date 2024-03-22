@@ -2,3 +2,5 @@ cryptography
 rioxarray
 dask
 rasterstats
+pyproj
+swifter
