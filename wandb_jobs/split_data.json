@@ -1,0 +1,15 @@
+{
+  "overrides": {
+    "args": [
+      "--split_rules_artifact",
+      "s4a_temporal1:latest",
+      "--seed",
+      "0",
+      "--shuffle",
+      "--elevation"
+    ],
+    "run_config": {
+    },
+    "entry_point": []
+  }
+}

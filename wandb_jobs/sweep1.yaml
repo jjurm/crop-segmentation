@@ -1,0 +1,54 @@
+job: 'jjurm/agri-strat/experiment:sweep2'
+method: grid
+name: sweep2
+metric:
+  goal: maximize
+  name: val/f1w_parcel.max
+parameters:
+  seed:
+    values:
+      - 0
+      - 1
+  model:
+    value: "unet"
+  parcel_loss:
+    value: true
+  weighted_loss:
+    value: true
+  class_weights_weight:
+    values:
+      - 0.0
+      - 0.1
+      - 0.2
+      - 0.4
+  medians_artifact:
+    value: "1MS_B02B03B04B08_61x61:latest"
+  split_artifact:
+    value: "s4a_naive_split:latest"
+  bins_range:
+    value: [4, 9]
+  num_epochs:
+    value: 8
+  batch_size:
+    values:
+      - 64
+      - 128
+      - 256
+  learning_rate:
+    values:
+      - 1e-1
+      - 1e-2
+  requires_norm:
+    value: true
+  num_workers:
+    value: 8
+  deterministic:
+    value: true
+  shuffle_buffer_num_patches:
+    value: 500
+  skip_empty_subpatches:
+    value: true
+  label_encoder_artifact:
+    value: "s4a_labels:latest"
+scheduler:
+  num_workers: 5
