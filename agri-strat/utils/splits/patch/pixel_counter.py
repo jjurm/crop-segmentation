@@ -32,12 +32,13 @@ class ClassPixelCounts(PatchProcessor):
 
 class ClassPixelCountsPerSplit(PatchProcessor):
     def __init__(self, classes: set[int]):
-        self.classes = classes
+        self.classes = sorted(classes)
         self.counts = {}
 
     def process(self, path: Path, row: pd.Series, netcdf_dataset: netCDF4.Dataset = None) -> pd.Series:
         target_split = row["target"]
         pixel_counts = row["pixel_counts"]
+        row.drop("pixel_counts", inplace=True)
 
         if target_split not in self.counts:
             self.counts[target_split] = {c: 0 for c in self.classes}
@@ -46,6 +47,7 @@ class ClassPixelCountsPerSplit(PatchProcessor):
             count = pixel_counts.get(c, 0)
             self.counts[target_split][c] += count
             row["pixel_count_" + str(c)] = count
+        row["pixel_count_max"] = max(v for c, v in pixel_counts.items() if c != 0)
         return row
 
     def _get_count_dataframe(self, target):

@@ -47,5 +47,4 @@ class PatchElevationStats(PatchProcessor):
             prefix="elevation_",
             stats="mean std median",
         )
-        # TODO add stats to row
         return pd.concat([row, pd.Series(stats[0])])
