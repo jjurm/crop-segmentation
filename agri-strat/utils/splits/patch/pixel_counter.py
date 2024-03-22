@@ -2,28 +2,51 @@ from pathlib import Path
 
 import netCDF4
 import numpy as np
+import pandas as pd
 import wandb
 import xarray as xr
-import pandas as pd
 
 from mappings.encodings_en import CROP_ENCODING_REVERSE
 from utils.constants import LABEL_DTYPE
 from utils.splits.patch.patch_processor import PatchProcessor
 
 
-class PixelCounter(PatchProcessor):
+class ClassPixelCounts(PatchProcessor):
     def __init__(self):
-        self.counts = {}
+        self.classes = set()
 
-    def process(self, path: Path, target_split: str, netcdf_dataset: netCDF4.Dataset):
+    def process(self, path: Path, row: pd.Series, netcdf_dataset: netCDF4.Dataset = None) -> pd.Series:
         labels = xr.open_dataset(xr.backends.NetCDF4DataStore(netcdf_dataset['labels']))['labels'].values \
             .astype(LABEL_DTYPE)
 
-        # Compute pixel counts for each class
+        classes = list(map(int, np.unique(labels)))
+        self.classes = self.classes.union(classes)
+
+        pixel_counts = {
+            c: int(np.sum(labels == c))
+            for c in classes
+        }
+        row["pixel_counts"] = pixel_counts
+        return row
+
+
+class ClassPixelCountsPerSplit(PatchProcessor):
+    def __init__(self, classes: set[int]):
+        self.classes = classes
+        self.counts = {}
+
+    def process(self, path: Path, row: pd.Series, netcdf_dataset: netCDF4.Dataset = None) -> pd.Series:
+        target_split = row["target"]
+        pixel_counts = row["pixel_counts"]
+
         if target_split not in self.counts:
-            self.counts[target_split] = {}
-        for c in map(int, np.unique(labels)):
-            self.counts[target_split][c] = self.counts[target_split].get(c, 0) + int(np.sum(labels == c))
+            self.counts[target_split] = {c: 0 for c in self.classes}
+
+        for c in self.classes:
+            count = pixel_counts.get(c, 0)
+            self.counts[target_split][c] += count
+            row["pixel_count_" + str(c)] = count
+        return row
 
     def _get_count_dataframe(self, target):
         df = pd.DataFrame.from_records([
@@ -33,7 +56,7 @@ class PixelCounter(PatchProcessor):
         df = df.sort_values(by='class')
         return df
 
-    def log_to_artifact(self, artifact: wandb.Artifact):
+    def log_to_artifact(self, split_df: pd.DataFrame, artifact: wandb.Artifact):
         for target in self.counts.keys():
             artifact.add(wandb.Table(
                 dataframe=self._get_count_dataframe(target)

@@ -9,18 +9,18 @@ import argparse
 import os
 from pathlib import Path
 
-import netCDF4
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
+import swifter
 
 import wandb
 from utils.splits.coco import split_by_coco_files
-from utils.splits.patch.elevation import ElevationStats
-from utils.splits.patch.patch_processor import PatchProcessor
-from utils.splits.patch.pixel_counter import PixelCounter
-from utils.splits.patch.visualize import PatchVisualizer
-from utils.splits.split_rules import split_by_split_rules
+from utils.splits.patch.elevation import PatchElevationStats
+from utils.splits.patch.filename_attrs import PatchFilenameAttrs
+from utils.splits.patch.geometry import PatchGeometry
+from utils.splits.patch.patch_processor import PatchProcessor, PatchApplyFn
+from utils.splits.patch.pixel_counter import ClassPixelCounts, ClassPixelCountsPerSplit
+from utils.splits.split_rules import split_by_split_rules, random_splits
 
 
 def parse_arguments():
@@ -79,12 +79,21 @@ def create_artifact(
     artifact.add(wandb.Table(dataframe=patch_counts.to_frame().reset_index()), name="patch_counts")
 
     for patch_processor in patch_processors:
-        patch_processor.log_to_artifact(artifact)
+        patch_processor.log_to_artifact(split_df, artifact)
 
     wandb.run.log_artifact(artifact)
 
 
+def shuffle(split_df):
+    return split_df.sample(frac=1).reset_index(drop=True)
+
+
 def main():
+    swifter.set_defaults(
+        force_parallel=True,
+        allow_dask_on_strings=True,
+    )
+
     with wandb.init(
             project='agri-strat',
             job_type='generate-split',
@@ -97,6 +106,7 @@ def main():
 
         netcdf_path = Path(run.config['netcdf_path'])
 
+        # List all patches and split rules
         if run.config["split_rules_artifact"] is not None:
             patch_paths = [
                 patch_path.relative_to(netcdf_path)
@@ -105,34 +115,46 @@ def main():
             if run.config["limit_patches"] is not None:
                 patch_paths = patch_paths[:run.config["limit_patches"]]
                 run.tags = run.tags + ("devtest",)
-            split_df, split_rules_name = split_by_split_rules(run.config["split_rules_artifact"], patch_paths)
+            split_df, rules_to_split, split_rule_defs, split_rules_name = split_by_split_rules(
+                run.config["split_rules_artifact"], patch_paths)
         elif run.config["coco_path_prefix"] is not None:
             split_df, split_rules_name = split_by_coco_files(run.config["coco_path_prefix"])
+            rules_to_split = {}
+            split_rule_defs = None
         else:
             raise ValueError("Either split_rules_artifact or coco_path_prefix must be provided.")
+        split_df.set_index("path", inplace=True)
 
         # Process each patch
-        stats_adders = []
-        if run.config["elevation"]:
-            dem_path = run.config["dem_path"] or Path(os.getenv("DEM_PATH", "dataset/dem/srtm30"))
-            stats_adders.append(ElevationStats(dem_path))
-        patch_processors = [
-            PixelCounter(),
-            PatchVisualizer(stats_adders=stats_adders),
+        print("Pre-processing patches...")
+        patch_preprocessors = [
+            PatchFilenameAttrs(),
+            PatchGeometry(),
+            (pixel_counter := ClassPixelCounts()),
         ]
-        with tqdm(total=len(split_df)) as pbar:
-            for target, split in split_df.groupby("target"):
-                for i, row in split.iterrows():
-                    with netCDF4.Dataset(netcdf_path / row["path"]) as dataset:
-                        for patch_processor in patch_processors:
-                            patch_processor.process(Path(row["path"]), target, dataset)
-                    pbar.update(1)
+        if run.config["elevation"]:
+            patch_preprocessors.append(PatchElevationStats(
+                srtm_dataset_path=run.config["dem_path"] or Path(os.getenv("DEM_PATH", "dataset/dem/srtm30"))
+            ))
+        preprocess_fn = PatchApplyFn(patch_preprocessors, with_netcdf_file=True, netcdf_path=netcdf_path)
+        split_df = split_df.swifter.apply(preprocess_fn, axis=1)
+
+        # Now perform random splits
+        random_splits(split_df, rules_to_split, split_rule_defs)
+
+        # Process each patch again
+        print("Post-processing patches...")
+        patch_postprocessors = [
+            ClassPixelCountsPerSplit(classes=pixel_counter.classes),
+        ]
+        postprocess_fn = PatchApplyFn(patch_postprocessors)
+        split_df = split_df.swifter.apply(postprocess_fn, axis=1)
 
         if run.config["shuffle"]:
-            split_df = split_df.sample(frac=1).reset_index(drop=True)
+            split_df = shuffle(split_df)
 
         # Create a wandb artifact
-        create_artifact(run.config, split_rules_name, split_df, patch_processors)
+        create_artifact(run.config, split_rules_name, split_df, patch_preprocessors + patch_postprocessors)
 
 
 if __name__ == '__main__':

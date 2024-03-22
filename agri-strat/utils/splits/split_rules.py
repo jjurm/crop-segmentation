@@ -1,7 +1,7 @@
+import numpy as np
 import pandas as pd
 import wandb
 import yaml
-import numpy as np
 
 
 class SetMeOneTimeTarget:
@@ -109,7 +109,7 @@ def calculate_split_boundaries(targets):
     return fraction_boundaries
 
 
-def random_split(targets, patch_paths, rule_loc):
+def random_split(targets: list, patch_paths, split_df, rule_loc):
     fraction_boundaries = calculate_split_boundaries(targets)
     assert fraction_boundaries[-1] < 1 or np.isclose(fraction_boundaries[-1], 1), (
         f"Split fractions should sum to 1 but sume to {fraction_boundaries[-1]} in rule {rule_loc}")
@@ -118,15 +118,22 @@ def random_split(targets, patch_paths, rule_loc):
         (target["target"], num_patches) for target, num_patches in zip(targets, np.diff([0, *boundaries]))
     ]
     print(f"Rule {rule_loc}: Splitting {len(patch_paths)} patches into {num_patches_per_split}")
-    df = pd.DataFrame({
-        "path": patch_paths,
-        "target": None,
-    })
-    indices = np.random.permutation(df.index)
+
+    indices = np.random.permutation(patch_paths)
     for target, idx_low, idx_high in zip(targets, [0, *boundaries], boundaries):
-        df.loc[indices[idx_low:idx_high], "target"] = target["target"]
+        split_df.loc[indices[idx_low:idx_high], "target"] = target["target"]
+
+
+def random_splits(split_df, rules_to_split, split_rule_defs):
+    print("Performing random splits...")
+    for rule_loc, patch_paths in rules_to_split.items():
+        targets = get_rule_by_loc(split_rule_defs, rule_loc)["target"]
+        random_split(targets, patch_paths, split_df, rule_loc)
     # Only return entries with a target
-    return df.dropna(subset=["target"])
+    all_patch_count = len(split_df)
+    split_df.dropna(subset=["target"], inplace=True)
+    if len(split_df) < all_patch_count:
+        print(f"Discarded {all_patch_count - len(split_df)} patches without a target (keeping {len(split_df)}).")
 
 
 def split_by_split_rules(split_rules_artifact_name, patch_paths):
@@ -139,13 +146,13 @@ def split_by_split_rules(split_rules_artifact_name, patch_paths):
     split_rules_artifact = wandb.run.use_artifact(split_rules_artifact_name, type='split_rules')
     split_rules_filename = split_rules_artifact.file()
     with open(split_rules_filename, 'r') as file:
-        split_rules = yaml.safe_load(file)
+        split_rule_defs = yaml.safe_load(file)
     # Accumulate patches and targets (to later build a dataframe)
     split_rows = []
     # The following is a dict of rules where a random split needs to be done after accumulating the patches.
     rules_to_split = {}  # {rule_loc: [patch_paths]}
     for relative_path in patch_paths:
-        target = find_target_of_patch(relative_path, split_rules["rules"])
+        target = find_target_of_patch(relative_path, split_rule_defs["rules"])
         if target is not None:
             if isinstance(target, str):
                 split_rows.append((relative_path, target))
@@ -154,13 +161,8 @@ def split_by_split_rules(split_rules_artifact_name, patch_paths):
                 if target not in rules_to_split:
                     rules_to_split[target] = []
                 rules_to_split[target].append(relative_path)
+                split_rows.append((relative_path, None))
     split_df = pd.DataFrame.from_records(split_rows, columns=['path', 'target'])
-    # Now perform random splits
-    for rule_loc, patch_paths in rules_to_split.items():
-        targets = get_rule_by_loc(split_rules, rule_loc)["target"]
-        assert isinstance(targets, list)  # If string, it would have been assigned a target by find_target_of_patch
 
-        df = random_split(targets, patch_paths, rule_loc)
-        split_df = pd.concat([split_df, df])
     split_rules_name = split_rules_artifact.collection.name
-    return split_df, split_rules_name
+    return split_df, rules_to_split, split_rule_defs, split_rules_name

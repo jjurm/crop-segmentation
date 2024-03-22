@@ -1,7 +1,7 @@
 import glob
 from pathlib import Path
 
-import geopandas as gpd
+import netCDF4
 import pandas as pd
 import rasterio
 import rasterio.merge
@@ -9,10 +9,10 @@ import rasterstats
 import rioxarray
 from rasterio import MemoryFile
 
-from utils.splits.patch.stats_adder import PatchStatsAdder
+from utils.splits.patch.patch_processor import PatchProcessor
 
 
-class ElevationStats(PatchStatsAdder):
+class PatchElevationStats(PatchProcessor):
     def __init__(self, srtm_dataset_path: Path):
         files = glob.glob((srtm_dataset_path / "*.hgt.zip").as_posix())
         assert len(files) > 0, f"No SRTM30m files found in {srtm_dataset_path}."
@@ -38,16 +38,14 @@ class ElevationStats(PatchStatsAdder):
             with memfile.open() as dataset:  # Reopen as DatasetReader
                 self.array = rioxarray.open_rasterio(dataset)
 
-    def _get_elevation(self, x: float, y: float) -> float:
-        return self.array.sel(x=x, y=y, method="nearest").item()
-
-    def process(self, geo_df: gpd.GeoDataFrame) -> pd.DataFrame:
+    def process(self, path: Path, row: pd.Series, netcdf_dataset: netCDF4.Dataset = None) -> pd.Series:
         stats = rasterstats.zonal_stats(
-            vectors=geo_df,
+            vectors=row["geometry"],
             raster=self.array.values.squeeze(axis=0),
             nodata=self.array.rio.nodata,
             affine=self.array.rio.transform(),
             prefix="elevation_",
             stats="mean std median",
         )
-        return pd.concat([geo_df, pd.DataFrame(stats)], axis=1)
+        # TODO add stats to row
+        return pd.concat([row, pd.Series(stats[0])])
