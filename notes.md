@@ -104,13 +104,9 @@ sudo docker run \
   --gpus all \
   --env-file /home/jmicko/.env \
   --shm-size=24gb \
-  --mount src=/home/jmicko/thesis-python/agri-strat/dataset/medians,target=/workdir/dataset/medians,type=bind \
-  --mount src=/home/jmicko/thesis-python/agri-strat/dataset/dem,target=/workdir/dataset/dem,type=bind \
+  --mount src=/home/jmicko/thesis-python/agri-strat/dataset,target=/workdir/dataset,type=bind \
   --mount src=/home/jmicko/.config/wandb,target=/workdir/.config/wandb,type=bind \
   --hostname $(hostname)-docker \
-  --env WANDB_CONFIG_DIR=/workdir/.config/wandb \
-  --env MEDIANS_PATH=/workdir/dataset/medians \
-  --env DEM_PATH=/workdir/dataset/dem \
   --env NODE_NAME=$(hostname)-docker \
   jjurm/runai-python-job \
   wandb launch-agent
@@ -122,25 +118,26 @@ runai submit \
   --cpu 4 \
   --gpu 0.2 \
   --large-shm \
+  -e HOME=/workdir \
   -e ENV_FILE=/myhome/.env \
-  -e WANDB_CONFIG_DIR=/myhome/.config/wandb \
-  -e MEDIANS_PATH=/mydata/studentmichele/juraj/thesis-python/agri-strat/dataset/medians \
-  -e DEM_PATH=/mydata/studentmichele/juraj/thesis-python/agri-strat/dataset/dem \
   --backoff-limit 0 \
   --preemptible \
   --name wla1 \
-  -- wandb launch-agent
+  -- wandb launch-agent -c /myhome/.config/wandb/launch-config.yaml
 ```
 
 create a job
 ```bash
-# git commit & push
-wandb job create -p agri-strat -e jjurm --name experiment --entry-point agri-strat/experiment.py --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
-
 wandb job create -p agri-strat -e jjurm --name split_data --entry-point agri-strat/split_data.py --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
+```
+```bash
+wandb job create -p agri-strat -e jjurm --name experiment --entry-point agri-strat/experiment.py --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
 ```
 
 launch the job
+```bash
+wandb launch -e jjurm -p agri-strat -q kp --job jjurm/agri-strat/split_data:latest --priority medium --config wandb_jobs/split_data.json
+```
 ```bash
 wandb launch -e jjurm -p agri-strat -q mixed --job jjurm/agri-strat/experiment:latest --priority medium --config wandb_jobs/experiment.json
 ```
