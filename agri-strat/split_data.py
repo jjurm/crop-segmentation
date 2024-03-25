@@ -28,7 +28,7 @@ def parse_arguments():
     parser.add_argument('--split_rules_artifact', type=str, required=False,
                         help='Wandb artifact of the \'split_rules\' type.')
     parser.add_argument('--coco_path_prefix', type=str, required=False, )
-    parser.add_argument('--netcdf_path', type=Path, default=None, required=False,
+    parser.add_argument('--netcdf_path', type=str, default=None, required=False,
                         help='Path to the netCDF files. Default $NETCDF_PATH or "dataset/netcdf".')
 
     parser.add_argument('--seed', type=int, default=0, required=False,
@@ -38,7 +38,7 @@ def parse_arguments():
 
     parser.add_argument('--elevation', action='store_true', default=False, required=False,
                         help='Use the elevation data for stratification. Default: False.')
-    parser.add_argument("--dem_path", type=Path, default=None, required=False,
+    parser.add_argument("--dem_path", type=str, default=None, required=False,
                         help="Directory to save the SRTM30m data. Default: $DEM_PATH or 'dataset/dem/srtm30'.")
 
     parser.add_argument('--artifact_name_prefix', type=str, default=None, required=False,
@@ -104,7 +104,7 @@ def main():
         if run.config["split_rules_artifact"] is not None and run.config["coco_path_prefix"] is not None:
             raise ValueError("Only one of split_rules_artifact or coco_path_prefix can be provided.")
 
-        netcdf_path = run.config['netcdf_path'] or Path(os.getenv("NETCDF_PATH", "dataset/netcdf"))
+        netcdf_path = Path(run.config['netcdf_path'] or os.getenv("NETCDF_PATH", "dataset/netcdf"))
 
         # List all patches and split rules
         if run.config["split_rules_artifact"] is not None:
@@ -136,7 +136,7 @@ def main():
         ]
         if run.config["elevation"]:
             patch_preprocessors.append(PatchElevationStats(
-                srtm_dataset_path=run.config["dem_path"] or Path(os.getenv("DEM_PATH", "dataset/dem/srtm30"))
+                srtm_dataset_path=Path(run.config["dem_path"] or os.getenv("DEM_PATH", "dataset/dem/srtm30"))
             ))
         preprocess_fn = PatchApplyFn(patch_preprocessors, with_netcdf_file=True, netcdf_path=netcdf_path)
         split_df = split_df.swifter.apply(preprocess_fn, axis=1)

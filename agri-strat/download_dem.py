@@ -13,7 +13,7 @@ import wandb
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--split_artifact", type=str, required=True, help="Artifact of the type 'split'.")
-    parser.add_argument("--dem_path", type=Path, default=None, required=False,
+    parser.add_argument("--dem_path", type=str, default=None, required=False,
                         help="Directory to save the SRTM30m data. Default: $DEM_PATH or 'dataset/dem/srtm30'.")
     return parser.parse_args()
 
@@ -43,7 +43,7 @@ def main():
     if not bearer_token:
         raise ValueError("Please set the EARTHDATA_TOKEN environment variable.")
     base_url = "https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/"
-    dem_path = config["dem_path"] or Path(os.getenv("DEM_PATH", "dataset/dem/srtm30"))
+    dem_path = Path(config["dem_path"] or os.getenv("DEM_PATH", "dataset/dem/srtm30"))
     dem_path.mkdir(parents=True, exist_ok=True)
     # noinspection PyArgumentList
     with logging_redirect_tqdm():

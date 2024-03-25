@@ -27,7 +27,7 @@ from utils.medians_metadata import MediansMetadata
 def parse_arguments():
     # Parse user arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--netcdf_path', type=Path, default=None, required=False,
+    parser.add_argument('--netcdf_path', type=str, default=None, required=False,
                         help='Path to the netCDF files. Default $NETCDF_PATH or "dataset/netcdf".')
     parser.add_argument('--medians_path', type=str, default=None, required=False,
                         help='Path to the directory with subdirectories of medians. Defaults to $MEDIANS_PATH or '
@@ -194,7 +194,7 @@ def main():
             run.tags = run.tags + ("devtest",)
 
         print("Listing patches...")
-        netcdf_path = run.config["netcdf_path"] or Path(os.environ.get("NETCDF_PATH", "dataset/netcdf"))
+        netcdf_path = Path(run.config["netcdf_path"] or os.environ.get("NETCDF_PATH", "dataset/netcdf"))
         medians_path = run.config["medians_path"] or os.environ.get("MEDIANS_PATH", "dataset/medians")
         jobs = []
         patches_generator = netcdf_path.glob('**/*.nc')
