@@ -71,7 +71,7 @@ def create_artifact(
     splits_dir.mkdir(parents=True, exist_ok=True)
     for target, target_df in split_df.groupby('target'):
         target_file_path = splits_dir / f"{target}.txt"
-        target_df.drop(columns='target').to_csv(target_file_path, index=False, header=False)
+        target_df.to_csv(target_file_path, index=True, header=False, columns=[])
         print(f"Split {target} written to {target_file_path}.")
     artifact.add_dir(splits_dir.as_posix(), name="splits")
 
