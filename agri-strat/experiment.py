@@ -72,7 +72,11 @@ def parse_arguments():
     parser.add_argument('--num_epochs', type=int, default=10, required=False,
                         help='Number of epochs. Default 10')
     parser.add_argument('--batch_size', type=int, default=4, required=False,
-                        help='The batch size. Default 4')
+                        help='If physical_batch_size=None, behaves as the conventional batch_size. Otherwise, '
+                             'sets the effective batch size and must be smaller than or a multiply of '
+                             'physical_batch_size. Default 4')
+    parser.add_argument('--physical_batch_size', type=int, default=None, required=False,
+                        help='If set and smaller than batch_size, sets the batch_size the model receives in each step.')
     parser.add_argument('--learning_rate', type=float, default=1e-1, required=False,
                         help='Starting learning rate. Default 1e-1')
     parser.add_argument('--requires_norm', action='store_true', default=False, required=False,
@@ -116,7 +120,7 @@ def get_tags(args, config):
     return tags
 
 
-def create_datamodule(config, label_encoder):
+def create_datamodule(config, label_encoder, calculated_batch_size):
     datamodule = MediansDataModule(
         medians_artifact=config["medians_artifact"],
         medians_path=config["medians_path"] or os.getenv("MEDIANS_PATH", "dataset/medians"),
@@ -124,7 +128,7 @@ def create_datamodule(config, label_encoder):
         bins_range=config["bins_range"],
         label_encoder=label_encoder,
         requires_norm=config["requires_norm"],
-        batch_size=config["batch_size"],
+        batch_size=calculated_batch_size,
         num_workers=config["num_workers"],
         cache_dataset=config["cache_dataset"],
         shuffle_buffer_num_patches=config["shuffle_buffer_num_patches"],
@@ -185,9 +189,20 @@ def main():
         torch.set_float32_matmul_precision('medium')
         seed_everything(run.config["seed"], workers=True)
 
+        if (run.config["physical_batch_size"] is not None
+                and run.config["physical_batch_size"] < run.config["batch_size"]):
+            assert run.config["batch_size"] % run.config["physical_batch_size"] == 0, \
+                "batch_size must be divisible by physical_batch_size."
+            multiply = run.config["batch_size"] // run.config["physical_batch_size"]
+            assert multiply & (multiply - 1) == 0, \
+                "batch_size must be a power of 2 when using physical_batch_size."
+            calculated_batch_size, accumulate_grad_batches = run.config["physical_batch_size"], multiply
+        else:
+            calculated_batch_size, accumulate_grad_batches = run.config["batch_size"], 1
+
         print("Creating datamodule, model, trainer...")
         label_encoder = LabelEncoder(run.config["label_encoder_artifact"])
-        datamodule = create_datamodule(run.config, label_encoder)
+        datamodule = create_datamodule(run.config, label_encoder, calculated_batch_size)
         model = create_model(run.config, label_encoder, datamodule)
 
         callbacks = [
@@ -229,6 +244,7 @@ def main():
             limit_train_batches=run.config["limit_train_batches"],
             limit_val_batches=run.config["limit_val_batches"],
             num_sanity_val_steps=2,
+            accumulate_grad_batches=accumulate_grad_batches,
             # profiler='simple',
         )
 
