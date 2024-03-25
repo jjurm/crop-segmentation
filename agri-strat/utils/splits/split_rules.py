@@ -167,6 +167,7 @@ def stratify_dataset(df: pd.DataFrame, indices: pd.Index, stratify_on: list, spl
             y = get_feature_for_stratifying(df.loc[remaining_indices], stratify_on)
             for train_index_i, test_index_i in strat_split.split(remaining_indices, y):
                 train_index, test_index = remaining_indices[train_index_i], remaining_indices[test_index_i]
+                break
             else:
                 assert False, "StratifiedShuffleSplit did not return any splits."
         else:
