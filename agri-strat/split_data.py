@@ -88,7 +88,6 @@ def create_artifact(
 
 def main():
     swifter.set_defaults(
-        force_parallel=True,
         allow_dask_on_strings=True,
     )
 
