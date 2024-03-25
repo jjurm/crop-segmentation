@@ -112,6 +112,8 @@ def main():
                 patch_path.relative_to(netcdf_path)
                 for patch_path in sorted(list(netcdf_path.glob('**/*.nc')))
             ]
+            if len(patch_paths) == 0:
+                raise ValueError(f"No patches found in {netcdf_path}.")
             if run.config["limit_patches"] is not None:
                 patch_paths = patch_paths[:run.config["limit_patches"]]
                 run.tags = run.tags + ("devtest",)
