@@ -28,8 +28,8 @@ def parse_arguments():
     parser.add_argument('--split_rules_artifact', type=str, required=False,
                         help='Wandb artifact of the \'split_rules\' type.')
     parser.add_argument('--coco_path_prefix', type=str, required=False, )
-    parser.add_argument('--netcdf_path', type=str, default='dataset/netcdf', required=False,
-                        help='Path to the netCDF files. Default "dataset/netcdf".')
+    parser.add_argument('--netcdf_path', type=Path, default=None, required=False,
+                        help='Path to the netCDF files. Default $NETCDF_PATH or "dataset/netcdf".')
 
     parser.add_argument('--seed', type=int, default=0, required=False,
                         help='Seed for random splits and shuffling. Default: 0.')
@@ -104,7 +104,7 @@ def main():
         if run.config["split_rules_artifact"] is not None and run.config["coco_path_prefix"] is not None:
             raise ValueError("Only one of split_rules_artifact or coco_path_prefix can be provided.")
 
-        netcdf_path = Path(run.config['netcdf_path'])
+        netcdf_path = run.config['netcdf_path'] or Path(os.getenv("NETCDF_PATH", "dataset/netcdf"))
 
         # List all patches and split rules
         if run.config["split_rules_artifact"] is not None:
