@@ -6,7 +6,7 @@ metadata:
 spec:
   image:
     #value: lscr.io/linuxserver/openssh-server:latest
-    value: jjurm/runai-interactive
+    value: jjurm/runai-python-job
   nodeType:
     value: "CPU"
   cpu:
