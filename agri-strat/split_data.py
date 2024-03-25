@@ -86,10 +86,6 @@ def create_artifact(
     wandb.run.log_artifact(artifact)
 
 
-def shuffle(split_df):
-    return split_df.sample(frac=1).reset_index(drop=True)
-
-
 def main():
     swifter.set_defaults(
         force_parallel=True,
@@ -131,7 +127,6 @@ def main():
         split_df.set_index("path", inplace=True)
 
         # Process each patch
-        print("Pre-processing patches...")
         patch_preprocessors = [
             PatchFilenameAttrs(),
             PatchGeometry(),
@@ -141,22 +136,23 @@ def main():
             patch_preprocessors.append(PatchElevationStats(
                 srtm_dataset_path=Path(run.config["dem_path"] or os.getenv("DEM_PATH", "dataset/dem/srtm30"))
             ))
+        print("Pre-processing patches...")
         preprocess_fn = PatchApplyFn(patch_preprocessors, with_netcdf_file=True, netcdf_path=netcdf_path)
         split_df = split_df.swifter.apply(preprocess_fn, axis=1)
 
         # Now perform random splits
-        random_splits(split_df, rules_to_split, split_rule_defs)
+        random_splits(split_df, rules_to_split, split_rule_defs, seed=run.config["seed"])
 
         # Process each patch again
-        print("Post-processing patches...")
         patch_postprocessors = [
             ClassPixelCountsPerSplit(classes=pixel_counter.classes),
         ]
+        print("Post-processing patches...")
         postprocess_fn = PatchApplyFn(patch_postprocessors)
         split_df = split_df.swifter.apply(postprocess_fn, axis=1)
 
         if run.config["shuffle"]:
-            split_df = shuffle(split_df)
+            split_df = split_df.sample(frac=1, random_state=run.config["seed"])
 
         # Create a wandb artifact
         create_artifact(run.config, split_rules_name, split_df, patch_preprocessors + patch_postprocessors)
