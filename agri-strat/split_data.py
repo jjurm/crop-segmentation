@@ -27,7 +27,9 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--split_rules_artifact', type=str, required=False,
                         help='Wandb artifact of the \'split_rules\' type.')
-    parser.add_argument('--coco_path_prefix', type=str, required=False, )
+    parser.add_argument('--coco_path', type=str, default=None, required=False,
+                        help='Path to the COCO files. Default $COCO_PATH or "dataset/coco_files".')
+    parser.add_argument('--coco_prefix', type=str, default=None, required=False)
     parser.add_argument('--netcdf_path', type=str, default=None, required=False,
                         help='Path to the netCDF files. Default $NETCDF_PATH or "dataset/netcdf".')
 
@@ -101,7 +103,7 @@ def main():
     ) as run:
         np.random.seed(run.config['seed'])
 
-        if run.config["split_rules_artifact"] is not None and run.config["coco_path_prefix"] is not None:
+        if run.config["split_rules_artifact"] is not None and run.config["coco_prefix"] is not None:
             raise ValueError("Only one of split_rules_artifact or coco_path_prefix can be provided.")
 
         netcdf_path = Path(run.config['netcdf_path'] or os.getenv("NETCDF_PATH", "dataset/netcdf"))
@@ -119,8 +121,9 @@ def main():
                 run.tags = run.tags + ("devtest",)
             split_df, rules_to_split, split_rule_defs, split_rules_name = split_by_split_rules(
                 run.config["split_rules_artifact"], patch_paths)
-        elif run.config["coco_path_prefix"] is not None:
-            split_df, split_rules_name = split_by_coco_files(run.config["coco_path_prefix"])
+        elif run.config["coco_prefix"] is not None:
+            coco_path = Path(run.config["coco_path"] or os.getenv("COCO_PATH", "dataset/coco_files"))
+            split_df, split_rules_name = split_by_coco_files(coco_path / run.config["coco_prefix"])
             rules_to_split = {}
             split_rule_defs = None
         else:
