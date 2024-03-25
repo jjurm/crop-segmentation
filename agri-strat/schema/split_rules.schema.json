@@ -93,6 +93,23 @@
               }
             ]
           },
+          "stratify_on": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "column": {
+                  "type": "string"
+                },
+                "n_bins": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "required": ["column", "n_bins"]
+              }
+            },
+            "minItems": 1
+          },
           "rules": {
             "$ref": "#/definitions/rules"
           },

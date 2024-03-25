@@ -3,6 +3,9 @@ import pandas as pd
 import wandb
 import yaml
 
+from sklearn.model_selection import StratifiedShuffleSplit
+from verstack.stratified_continuous_split import combine_single_valued_bins
+
 
 class SetMeOneTimeTarget:
     def __init__(self, rule_loc):
@@ -71,6 +74,8 @@ def recursive_search(split_rules, metadata, rule_loc: tuple[int, ...]) -> str | 
                 target.set(recursive_search(filter_value, metadata, inner_rule_loc))
             elif key == "assert_none" and filter_value:
                 raise ValueError(f"Patch {metadata['path']} reached an assert_none rule {inner_rule_loc}")
+            elif key == "stratify_on":
+                pass
             else:
                 raise ValueError(f"Unknown key {key} in split rule {inner_rule_loc}")
         else:
@@ -124,11 +129,67 @@ def random_split(targets: list, patch_paths, split_df, rule_loc):
         split_df.loc[indices[idx_low:idx_high], "target"] = target["target"]
 
 
-def random_splits(split_df, rules_to_split, split_rule_defs):
+def get_feature_for_stratifying(df: pd.DataFrame, stratify_on: list) -> pd.Series:
+    """
+    Given a dataframe, converts all columns to categorical and concatenates them into a single column.
+    """
+    y_df = pd.DataFrame(index=df.index)
+    for feature in stratify_on:
+        feature_column = feature["column"]
+        if df.dtypes[feature_column] == 'float64':
+            n_bins = feature["n_bins"] if "n_bins" in feature else min(100, len(df) // 20)
+            features_binned = pd.cut(df[feature_column], bins=n_bins, labels=False)
+            # noinspection PyTypeChecker
+            features_binned = combine_single_valued_bins(np.array(features_binned))
+            y_df[feature_column] = features_binned
+        else:
+            raise ValueError(f"Feature {feature_column} to be stratified is of unsupported type "
+                             f"{df.dtypes[feature_column]}.")
+
+    return y_df.apply(lambda x: '__'.join(map(str, x)), axis=1)
+
+
+def stratify_dataset(df: pd.DataFrame, indices: pd.Index, stratify_on: list, splits: list[tuple[str, float]],
+                     seed=None):
+    """
+    Stratify a dataset based on the given columns.
+    """
+    generator = np.random.default_rng(seed)
+    remaining_indices = indices
+    remaining_ratio = 1.0
+    for split, split_ratio in splits:
+        train_size = split_ratio / remaining_ratio
+        if train_size < 1:
+            strat_split = StratifiedShuffleSplit(
+                n_splits=1,
+                train_size=split_ratio / remaining_ratio,
+                random_state=generator.integers(0, 2 ** 32))
+            y = get_feature_for_stratifying(df.loc[remaining_indices], stratify_on)
+            for train_index_i, test_index_i in strat_split.split(remaining_indices, y):
+                train_index, test_index = remaining_indices[train_index_i], remaining_indices[test_index_i]
+            else:
+                assert False, "StratifiedShuffleSplit did not return any splits."
+        else:
+            train_index, test_index = remaining_indices, pd.Index([])
+        df.loc[train_index, "target"] = split
+        remaining_indices = test_index
+        remaining_ratio -= split_ratio
+
+
+def random_splits(split_df, rules_to_split, split_rule_defs, seed=None):
+    generator = np.random.default_rng(seed)
     print("Performing random splits...")
     for rule_loc, patch_paths in rules_to_split.items():
-        targets = get_rule_by_loc(split_rule_defs, rule_loc)["target"]
-        random_split(targets, patch_paths, split_df, rule_loc)
+        rule = get_rule_by_loc(split_rule_defs, rule_loc)
+        if "stratify_on" in rule:
+            indices = pd.Index(patch_paths)
+            splits = [(target["target"], target["split"]) for target in rule["target"]]
+            stratify_dataset(
+                split_df, indices, rule["stratify_on"], splits,
+                seed=generator.integers(0, 2 ** 32))
+        else:
+            targets = rule["target"]
+            random_split(targets, patch_paths, split_df, rule_loc)
     # Only return entries with a target
     all_patch_count = len(split_df)
     split_df.dropna(subset=["target"], inplace=True)

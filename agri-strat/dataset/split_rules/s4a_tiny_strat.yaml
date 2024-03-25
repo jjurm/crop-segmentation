@@ -1,0 +1,16 @@
+# $schema: ../../schema/split_rules.schema.json
+rules:
+  - year: 2019
+    tile: "31TCJ"
+    target:
+      - target: train
+        split: 0.6
+      - target: val
+        split: 0.2
+      - target: test
+        split: 0.2
+    stratify_on:
+      - column: elevation_mean
+        bins: 6
+#      - column: elevation_std
+#        bins: 2

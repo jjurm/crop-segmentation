@@ -8,6 +8,7 @@ RUN apt-get update --yes && \
     python3.10 python3.10-dev \
     libcurl4-gnutls-dev \
     libgnutls28-dev \
+    libomp-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/* && \
     sudo ln -s /usr/bin/python3.10 /usr/bin/python
 
