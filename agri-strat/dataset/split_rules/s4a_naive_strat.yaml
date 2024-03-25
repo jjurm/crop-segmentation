@@ -1,0 +1,12 @@
+# $schema: ../../schema/split_rules.schema.json
+rules:
+  - target:
+      - target: train
+        split: 0.8
+      - target: val
+        split: 0.1
+      - target: test
+        split: 0.1
+    stratify_on:
+      - column: elevation_mean
+        bins: 6
