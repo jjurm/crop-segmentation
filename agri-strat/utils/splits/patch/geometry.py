@@ -40,5 +40,6 @@ class PatchGeometry(PatchProcessor):
         path = (Path(wandb.run.dir) / "splits_polygons.gpkg").as_posix()
         gdf = gpd.GeoDataFrame(split_df, crs=TARGET_CRS)
         gdf.index = gdf.index.map(str)
-        gdf.to_file(path)
+        assert gdf.index.name == "path"
+        gdf.to_file(path, index=True)
         artifact.add_file(path)
