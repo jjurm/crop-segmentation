@@ -1,4 +1,4 @@
-ARG ROOT_CONTAINER=nvidia/cuda:12.3.1-devel-ubuntu22.04
+ARG ROOT_CONTAINER=nvidia/cuda:12.3.2-cudnn9-devel-ubuntu22.04
 
 FROM $ROOT_CONTAINER
 
@@ -24,16 +24,20 @@ RUN apt-get update --yes && \
     locale-gen
 
 RUN apt-get install --yes --no-install-recommends \
-    pandoc \
     curl \
     git \
-    tmux \
+    git-lfs \
+    htop \
+    less \
     nano-tiny \
+    ncdu \
+    openssh-client \
+    openssh-server \
+    pandoc \
+    rsync \
+    tmux \
     unzip \
     vim-tiny \
-    openssh-server \
-    openssh-client \
-    less \
     && apt-get clean && rm -rf /var/lib/apt/lists/* && \
     mkdir -p /var/run/sshd && \
     update-alternatives --install /usr/bin/nano nano /bin/nano-tiny 10
@@ -52,6 +56,7 @@ RUN mkdir -p "${HOME}" && \
     chown -R "${NB_UID}:${NB_GID}" "${HOME}"
 
 RUN sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' /etc/skel/.bashrc
+RUN sed -i "s/^#StrictModes.*/StrictModes no/" /etc/ssh/sshd_config # Allow user to access non-user owned authorized_keys file
 
 ARG NB_PASSWORD="jupyter"
 RUN sed -i.bak -e 's/^%sudo/#%sudo/' /etc/sudoers && \

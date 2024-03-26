@@ -18,10 +18,8 @@ RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python && \
 
 USER $NB_USER
 
-COPY requirements-freeze-v1.txt /tmp/requirements-freeze-v1.txt
-RUN pip install --timeout 3600 -r /tmp/requirements-freeze-v1.txt
-
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --timeout 3600 -r /tmp/requirements.txt
+RUN pip install --timeout 3600 -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
 ENV IMAGE_HAS_PYTHON=true
