@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 import wandb
 import yaml
-
 from sklearn.model_selection import StratifiedShuffleSplit
-from verstack.stratified_continuous_split import combine_single_valued_bins
+
+from utils.splits.stratified_continuous_split import combine_single_valued_bins
 
 
 class SetMeOneTimeTarget:

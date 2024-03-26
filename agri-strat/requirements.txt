@@ -30,4 +30,3 @@ dask
 rasterstats
 pyproj
 swifter
-verstack
