@@ -13,7 +13,7 @@ torchmetrics
 torchvision
 tqdm
 xarray
-wandb
+wandb[launch]
 dataclasses-json
 rich
 typing_extensions
