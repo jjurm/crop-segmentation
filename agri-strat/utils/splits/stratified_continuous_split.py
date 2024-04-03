@@ -3,7 +3,6 @@
 
 from collections import Counter
 from functools import partial
-from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -11,7 +10,7 @@ import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
 
-def _floor_median_from_counts(values: np.ndarray[np.integer], counts: np.ndarray | list) -> np.integer:
+def _floor_median_from_counts(values: np.ndarray, counts: np.ndarray | list) -> np.integer:
     """
     Find floor(median) of an array of counts.
     Adjusted from https://gist.github.com/alexandru-dinu/4c6133202d8d379066994f5d11446e9d
@@ -29,8 +28,8 @@ def _floor_median_from_counts(values: np.ndarray[np.integer], counts: np.ndarray
 
     # median is the midpoint value (which falls in the same bucket)
     if n % 2 == 1 or (left == right).all():
-        values_: np.ndarray[np.integer] = values[right]
-        return values_[0]
+        # noinspection PyTypeChecker
+        return values[right][0]
     # median is the mean between the mid adjacent buckets
     else:
         return np.mean(values[left | right][:2], dtype=np.integer)
@@ -75,9 +74,7 @@ def _combine_single_valued_bins(y_binned, bins: pd.Index) -> list:
         if len(neighbors) > 0:
             n_splits = int(len(neighbors) / 2)
             for group in np.array_split(sorted(neighbors), n_splits):
-                target_bin_index = _floor_median_from_counts(
-                    cast(group, np.ndarray[np.integer]),
-                    [counts[bin_i] for bin_i in group])
+                target_bin_index = _floor_median_from_counts(group, [counts[bin_i] for bin_i in group])
                 for val in group:
                     y_bin_indices = np.where(y_bin_indices == val, target_bin_index, y_bin_indices)
 
@@ -149,7 +146,7 @@ def get_features_for_stratifying(df: pd.DataFrame, stratify_on: list) -> pd.Data
     y_df = pd.DataFrame(index=df.index)
     for feature in stratify_on:
         feature_column = feature["column"]
-        y_df[feature_column] = _bin_features(df[feature_column], feature.get("n_bins"))
+        y_df[feature_column] = _bin_features(df[feature_column], feature.get("bins"))
     return y_df
 
 

@@ -147,7 +147,7 @@ def stratify_dataset(df: pd.DataFrame, indices: pd.Index, stratify_on: list, spl
     remaining_ratio = 1.0
 
     # convert numerical features to binned features
-    y_df = get_features_for_stratifying(df[indices], stratify_on)
+    y_df = get_features_for_stratifying(df.loc[indices], stratify_on)
 
     for split, split_ratio in splits:
         train_size = split_ratio / remaining_ratio

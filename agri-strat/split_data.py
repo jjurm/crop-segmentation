@@ -88,6 +88,7 @@ def create_artifact(
 
 def main():
     swifter.set_defaults(
+        force_parallel=True,
         allow_dask_on_strings=True,
     )
 
@@ -116,6 +117,8 @@ def main():
                 run.tags = run.tags + ("devtest",)
             split_df, rules_to_split, split_rule_defs, split_rules_name = split_by_split_rules(
                 run.config["split_rules_artifact"], patch_paths)
+            if len(split_df) == 0:
+                raise ValueError(f"Split rules led to no patches to split.")
         elif run.config["coco_prefix"] is not None:
             coco_path = Path(run.config["coco_path"] or os.getenv("COCO_PATH", "dataset/coco_files"))
             split_df, split_rules_name = split_by_coco_files(coco_path / run.config["coco_prefix"])
