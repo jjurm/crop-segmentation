@@ -156,5 +156,5 @@ def combine_features_for_stratifying(y_df: pd.DataFrame) -> pd.Series:
     :param y_df: a DataFrame
     :return: Series with concatenated stratified features
     """
-    y_df_combined = _combine_single_valued_bins_multilevel(y_df, stratify_on=y_df.columns)
+    y_df_combined = _combine_single_valued_bins_multilevel(y_df, stratify_on=list(y_df.columns))
     return y_df_combined.apply(lambda x: '__'.join(map(str, x)), axis=1)
