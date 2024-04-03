@@ -4,7 +4,7 @@ import wandb
 import yaml
 from sklearn.model_selection import StratifiedShuffleSplit
 
-from utils.splits.stratified_continuous_split import combine_single_valued_bins
+from utils.splits.stratified_continuous_split import get_features_for_stratifying, combine_features_for_stratifying
 
 
 class SetMeOneTimeTarget:
@@ -129,34 +129,26 @@ def random_split(targets: list, patch_paths, split_df, rule_loc):
         split_df.loc[indices[idx_low:idx_high], "target"] = target["target"]
 
 
-def get_feature_for_stratifying(df: pd.DataFrame, stratify_on: list) -> pd.Series:
-    """
-    Given a dataframe, converts all columns to categorical and concatenates them into a single column.
-    """
-    y_df = pd.DataFrame(index=df.index)
-    for feature in stratify_on:
-        feature_column = feature["column"]
-        if df.dtypes[feature_column] == 'float64':
-            n_bins = feature["n_bins"] if "n_bins" in feature else min(100, len(df) // 20)
-            features_binned = pd.cut(df[feature_column], bins=n_bins, labels=False)
-            # noinspection PyTypeChecker
-            features_binned = combine_single_valued_bins(np.array(features_binned))
-            y_df[feature_column] = features_binned
-        else:
-            raise ValueError(f"Feature {feature_column} to be stratified is of unsupported type "
-                             f"{df.dtypes[feature_column]}.")
-
-    return y_df.apply(lambda x: '__'.join(map(str, x)), axis=1)
-
-
 def stratify_dataset(df: pd.DataFrame, indices: pd.Index, stratify_on: list, splits: list[tuple[str, float]],
-                     seed=None):
+                     seed=None, binned_features_column_prefix=None):
     """
-    Stratify a dataset based on the given columns.
+    Stratify a dataset based on the given columns, adding a column "target" to the DataFrame inplace.
+    :param df: DataFrame to stratify
+    :param indices: indices of the rows to stratify, all other rows are ignored
+    :param stratify_on: list of features to stratify on, a subset of df.columns, each feature in the form
+        `{column: "feature_name", n_bins: 10}`
+    :param splits: list of tuples (target, split_fraction) where split_fraction is the fraction of the dataset
+        that should be assigned to the target
+    :param seed: random seed
+    :param binned_features_column_prefix: when set, adds the binned features to df with the given prefix
     """
     generator = np.random.default_rng(seed)
     remaining_indices = indices
     remaining_ratio = 1.0
+
+    # convert numerical features to binned features
+    y_df = get_features_for_stratifying(df[indices], stratify_on)
+
     for split, split_ratio in splits:
         train_size = split_ratio / remaining_ratio
         if train_size < 1:
@@ -164,7 +156,7 @@ def stratify_dataset(df: pd.DataFrame, indices: pd.Index, stratify_on: list, spl
                 n_splits=1,
                 train_size=split_ratio / remaining_ratio,
                 random_state=generator.integers(0, 2 ** 32))
-            y = get_feature_for_stratifying(df.loc[remaining_indices], stratify_on)
+            y = combine_features_for_stratifying(y_df.loc[remaining_indices])
             for train_index_i, test_index_i in strat_split.split(remaining_indices, y):
                 train_index, test_index = remaining_indices[train_index_i], remaining_indices[test_index_i]
                 break
@@ -176,18 +168,26 @@ def stratify_dataset(df: pd.DataFrame, indices: pd.Index, stratify_on: list, spl
         remaining_indices = test_index
         remaining_ratio -= split_ratio
 
+    # add binned features to the DataFrame
+    if binned_features_column_prefix:
+        for column in y_df.columns:
+            new_column = f"{binned_features_column_prefix}_{column}"
+            df.loc[indices, new_column] = y_df.loc[indices, column]
+
 
 def random_splits(split_df, rules_to_split, split_rule_defs, seed=None):
     generator = np.random.default_rng(seed)
     print("Performing random splits...")
-    for rule_loc, patch_paths in rules_to_split.items():
+    for rule_loc, patch_paths in sorted(rules_to_split.items()):
         rule = get_rule_by_loc(split_rule_defs, rule_loc)
         if "stratify_on" in rule:
             indices = pd.Index(patch_paths)
             splits = [(target["target"], target["split"]) for target in rule["target"]]
             stratify_dataset(
                 split_df, indices, rule["stratify_on"], splits,
-                seed=generator.integers(0, 2 ** 32))
+                seed=generator.integers(0, 2 ** 32),
+                binned_features_column_prefix=f"strat_{'_'.join(map(str, rule_loc))}"
+            )
         else:
             targets = rule["target"]
             random_split(targets, patch_paths, split_df, rule_loc)

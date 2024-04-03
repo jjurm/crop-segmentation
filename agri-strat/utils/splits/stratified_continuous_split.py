@@ -1,104 +1,163 @@
-# Based on:
+# Partly based on:
 # https://github.com/DanilZherebtsov/verstack/blob/dcb777f5c2558f9d046072dbcf9e41d6b7b8a216/verstack/stratified_continuous_split.py
 
 from collections import Counter
+from functools import partial
+from typing import cast
 
 import numpy as np
+import pandas as pd
+# noinspection PyProtectedMember
+from pandas.api.types import is_numeric_dtype
 
 
-def find_neighbors_in_two_lists(keys_with_single_value, list_to_find_neighbors_in):
-    """Iterate over each item in first list to find a pair in the second list"""
-    neighbors = []
-    for i in keys_with_single_value:
-        for j in [x for x in list_to_find_neighbors_in if x != i]:
-            if i + 1 == j:
-                neighbors.append(i)
-                neighbors.append(j)
-            if i - 1 == j:
-                neighbors.append(i)
-                neighbors.append(j)
-    return neighbors
+def _floor_median_from_counts(values: np.ndarray[np.integer], counts: np.ndarray | list) -> np.integer:
+    """
+    Find floor(median) of an array of counts.
+    Adjusted from https://gist.github.com/alexandru-dinu/4c6133202d8d379066994f5d11446e9d
+    :param values: array of values, must be sorted
+    :param counts: where counts[i] is number of occurrences of values[i]
+    """
+    cf = np.cumsum(counts)
+    n = cf[-1]
+
+    # get the left and right buckets
+    # of where the midpoint falls,
+    # accounting for both even and odd lengths
+    left = (n // 2 - 1) < cf
+    right = (n // 2) < cf
+
+    # median is the midpoint value (which falls in the same bucket)
+    if n % 2 == 1 or (left == right).all():
+        values_: np.ndarray[np.integer] = values[right]
+        return values_[0]
+    # median is the mean between the mid adjacent buckets
+    else:
+        return np.mean(values[left | right][:2], dtype=np.integer)
 
 
-def no_neighbors_found(neighbors):
-    """Check if list is empty"""
-    return not neighbors
-
-
-def find_keys_without_neighbor(neighbors):
-    """Find integers in list without pair (consecutive increment of + or - 1 value) in the same list"""
-    no_pair = []
-    for i in neighbors:
-        if i + 1 in neighbors:
-            continue
-        elif i - 1 in neighbors:
-            continue
-        else:
-            no_pair.append(i)
-    return no_pair
-
-
-def not_need_further_execution(y_binned_count):
-    """Check if there are bins with single value counts"""
-    return 1 not in y_binned_count.values()
-
-
-def combine_single_valued_bins(y_binned: np.ndarray):
+def _combine_single_valued_bins(y_binned, bins: pd.Index) -> list:
     """
     Correct the assigned bins if some bins include a single value (cannot be split).
-
-    Find bins with single values and:
-        - try to combine them to the nearest neighbors within these single bins
-        - combine the ones that do not have neighbors among the single values with
-        the rest of the bins.
-
-    Args:
-        y_binned (array): original y_binned values.
-
-    Returns:
-        y_binned (array): processed y_binned values.
-
+    Tries to combine singleton bins to the nearest neighbors within these single bins, giving preference to other
+    singleton bins.
+    :param y_binned: original y_binned values
+    :param bins: list of all values that elements o y_binned can take
+    :return: processed y_binned values
     """
-    # count number of records in each bin
-    y_binned_count = dict(Counter(y_binned))
 
-    if not_need_further_execution(y_binned_count):
-        return y_binned
+    y_bin_indices = np.array([bins.get_loc(x) for x in y_binned])
+    n_bins = len(bins)
 
-    # combine the single-valued-bins with nearest neighbors
-    keys_with_single_value = [k for k, v in y_binned_count.items() if v == 1]
+    for distance in range(1, n_bins):
+        # count number of records in each bin
+        counts = dict(Counter(y_bin_indices))
+        singleton_bins = [bin_i for bin_i, count in counts.items() if count == 1]
+        if len(singleton_bins) == 0:
+            break
 
-    # first look for neighbors among other single keys
-    neighbors1 = find_neighbors_in_two_lists(keys_with_single_value, keys_with_single_value)
-    if no_neighbors_found(neighbors1):
-        # then look for neighbors among other available keys
-        neighbors1 = find_neighbors_in_two_lists(keys_with_single_value, y_binned_count.keys())
-    # now process keys for which no neighbor was found
-    leftover_keys_to_find_neighbors = list(set(keys_with_single_value).difference(neighbors1))
-    neighbors2 = find_neighbors_in_two_lists(leftover_keys_to_find_neighbors, y_binned_count.keys())
-    neighbors = sorted(list(set(neighbors1 + neighbors2)))
+        # find a neighbour for each singleton bin (at `distance` bins away)
+        neighbors = set()
+        for bin_i in singleton_bins:
+            if bin_i in neighbors:
+                continue
+            options = [
+                (counts[bin_j] > 1, bin_j)  # prefer other singleton bins
+                for bin_j in [bin_i - distance, bin_i + distance]
+                if bin_j in counts
+            ]
+            if options:
+                _, bin_j = min(options)
+                neighbors.add(bin_i)
+                neighbors.add(bin_j)
 
-    # split neighbors into groups for combining
-    # only possible when neighbors are found
-    if len(neighbors) > 0:
-        splits = int(len(neighbors) / 2)
-        neighbors = np.array_split(neighbors, splits)
-        for group in neighbors:
-            val_to_use = group[0]
-            for val in group:
-                y_binned = np.where(y_binned == val, val_to_use, y_binned)
-                keys_with_single_value = [x for x in keys_with_single_value if x != val]
+        # combine the bins
+        if len(neighbors) > 0:
+            n_splits = int(len(neighbors) / 2)
+            for group in np.array_split(sorted(neighbors), n_splits):
+                target_bin_index = _floor_median_from_counts(
+                    cast(group, np.ndarray[np.integer]),
+                    [counts[bin_i] for bin_i in group])
+                for val in group:
+                    y_bin_indices = np.where(y_bin_indices == val, target_bin_index, y_bin_indices)
 
-    # --------------------------------------------------------------------------------
-    # now combine the leftover keys_with_single_values with the rest of the bins
-    def find_nearest(array, value):
-        array = np.asarray(array)
-        idx = (np.abs(array - value)).argmin()
-        return array[idx]
+    return [bins[x] for x in y_bin_indices]
 
-    for val in keys_with_single_value:
-        nearest = find_nearest([x for x in y_binned if x not in keys_with_single_value], val)
-        ix_to_change = np.where(y_binned == val)[0][0]
-        y_binned[ix_to_change] = nearest
 
-    return y_binned
+def _combine_bins(df: pd.DataFrame, column: str) -> pd.DataFrame:
+    """
+    Given a dataframe and a column, returns the same dataframe with singleton values in the column combined.
+    :param df: a DataFrame
+    :param column: column name
+    :return: DataFrame with the column binned
+    """
+    features_combined = _combine_single_valued_bins(df[column], df[column].dtype.categories)
+    return df.assign(**{column: features_combined})
+
+
+def _combine_single_valued_bins_multilevel(df: pd.DataFrame, stratify_on: list) -> pd.DataFrame:
+    """
+    Given a dataframe, converts all columns to categorical, and combines single-valued bins for each column.
+
+    The order of stratify_on is relevant. First features are treated more important, meaning that with sparse bins,
+    latter features will be combined first.
+    Combining single-valued bins of a feature X is done in a group of rows that have the same value of all higher
+    features, and behaves as if lower features were not present.
+    :param df: a DataFrame
+    :param stratify_on: list of features to stratify on, a subset of df.columns
+    :return: DataFrame with columns corresponding to stratify_on features
+    """
+
+    grouped = df.groupby(by=lambda x: 0)
+    for feature_column in stratify_on:
+        # For each group, bin the feature_column, then group by the binned column
+        fn_per_group = partial(_combine_bins, column=feature_column)
+        grouped = grouped.apply(fn_per_group, include_groups=False).groupby(by=feature_column)
+
+    # Since the last grouping has no more features to bin, unwrap the index back to the dataframe
+    df_binned_combined = grouped.apply(lambda x: x, include_groups=False) \
+        .reset_index(level=stratify_on) \
+        .reset_index(level=0, drop=True) \
+        .reindex_like(df)
+    return df_binned_combined
+
+
+def _bin_features(feature: pd.Series, n_bins: int = None) -> pd.Series:
+    """
+    Given a feature, returns the binned feature if continuous/numerical. The returned values potentially form
+    single-valued bins.
+    :param feature: a Series
+    :param n_bins: number of bins
+    :return: the binned feature
+    """
+    if is_numeric_dtype(feature.dtype):
+        n_bins = n_bins or min(100, len(feature) // 20)
+        features_binned = pd.cut(feature, bins=n_bins, labels=np.arange(n_bins))
+        return pd.Series(features_binned, index=feature.index)
+    else:
+        raise ValueError(f"Feature {feature.name} to be stratified is of unsupported type {feature.dtype}.")
+
+
+def get_features_for_stratifying(df: pd.DataFrame, stratify_on: list) -> pd.DataFrame:
+    """
+    Given a dataframe, returns a dataframe with all columns converted to categorical and binned.
+    :param df: a DataFrame
+    :param stratify_on: list of features to stratify on, a subset of df.columns, each feature in the form
+        `{column: "feature_name", n_bins: 10}`
+    :return: DataFrame with stratified features
+    """
+    y_df = pd.DataFrame(index=df.index)
+    for feature in stratify_on:
+        feature_column = feature["column"]
+        y_df[feature_column] = _bin_features(df[feature_column], feature.get("n_bins"))
+    return y_df
+
+
+def combine_features_for_stratifying(y_df: pd.DataFrame) -> pd.Series:
+    """
+    Combine single-valued bins across multiple levels of features, then concatenate the features.
+    :param y_df: a DataFrame
+    :return: Series with concatenated stratified features
+    """
+    y_df_combined = _combine_single_valued_bins_multilevel(y_df, stratify_on=y_df.columns)
+    return y_df_combined.apply(lambda x: '__'.join(map(str, x)), axis=1)
