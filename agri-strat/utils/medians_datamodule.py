@@ -1,3 +1,4 @@
+import torch
 from math import ceil
 from pathlib import Path
 
@@ -41,6 +42,7 @@ class MediansDataModule(pl.LightningDataModule):
             requires_norm: bool,
             batch_size: int,
             num_workers: int,
+            seed: int,
             shuffle_buffer_num_patches: int,
             skip_zero_label_subpatches: bool,
             limit_train_batches: float = None,
@@ -61,6 +63,8 @@ class MediansDataModule(pl.LightningDataModule):
         self.limit_train_batches = limit_train_batches
         self.limit_val_batches = limit_val_batches
         self.shuffle_subpatches_within_patch = shuffle_subpatches_within_patch
+
+        self.generator = torch.Generator(device='cpu').manual_seed(seed)
 
         self.dataloader_args = {
             'batch_size': None,
@@ -133,7 +137,8 @@ class MediansDataModule(pl.LightningDataModule):
             raise ValueError(f"stage = {stage}, expected: 'fit' or 'test'")
 
     def train_dataloader(self):
-        dataloader = DataLoader(self.dataset_train, prefetch_factor=2 * self.batch_size, **self.dataloader_args)
+        dataloader = DataLoader(self.dataset_train, prefetch_factor=2 * self.batch_size, **self.dataloader_args,
+                                generator=self.generator)
         pipe = IterableWrapperIterDataPipe(dataloader, deepcopy=False) \
             .shuffle(buffer_size=self.shuffle_buffer_num_patches * self.metadata.num_subpatches_per_patch) \
             .batch(batch_size=self.batch_size).collate()

@@ -123,6 +123,7 @@ def create_datamodule(config, label_encoder, calculated_batch_size):
         requires_norm=config["requires_norm"],
         batch_size=calculated_batch_size,
         num_workers=config["num_workers"],
+        seed=config["seed"],
         shuffle_buffer_num_patches=config["shuffle_buffer_num_patches"],
         skip_zero_label_subpatches=config["parcel_loss"] and config["skip_empty_subpatches"],
         # integer limits are passed directly to the trainer instead
