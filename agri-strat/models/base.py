@@ -162,17 +162,26 @@ class BaseModelModule(pl.LightningModule):
     def setup(self, stage: str) -> None:
         wandb.run.summary["monitor_metric"] = self.monitor_metric
 
-        # Define metric summaries
+        step_metric = None
+        if stage == "fit":
+            step_metric = "trainer/global_step"
+            wandb.define_metric(step_metric)
+            wandb.define_metric("*", step_metric=step_metric)
+
         if stage == "fit" or stage == "validate":
-            wandb.define_metric("val/acc", summary="max,mean,last")
-            wandb.define_metric("val/acc_parcel", summary="max,mean,last")
-            wandb.define_metric("val/f1w", summary="max,mean,last")
-            wandb.define_metric("val/f1w_parcel", summary="max,mean,last")
-            wandb.define_metric("val/f1ma", summary="max,mean,last")
-            wandb.define_metric("val/f1ma_parcel", summary="max,mean,last")
-            wandb.define_metric("val/crop5_acc_parcel", summary="max,mean,last")
-            wandb.define_metric("val/crop5_f1w_parcel", summary="max,mean,last")
-            wandb.define_metric("val/crop5_f1ma_parcel", summary="max,mean,last")
+            metrics_with_summaries = [
+                "val/acc",
+                "val/acc_parcel",
+                "val/f1w",
+                "val/f1w_parcel",
+                "val/f1ma",
+                "val/f1ma_parcel",
+                "val/crop5_acc_parcel",
+                "val/crop5_f1w_parcel",
+                "val/crop5_f1ma_parcel",
+            ]
+            for metric in metrics_with_summaries:
+                wandb.define_metric(metric, summary="max,mean,last", step_metric=step_metric)
 
         # Log gradients
         if stage == "fit":
@@ -217,12 +226,6 @@ class BaseModelModule(pl.LightningModule):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
         batch_size = inputs.shape[0]
         output = self.model(inputs)
-        loss_nll = self.loss_nll(output, labels)
-        loss_nll_parcel = self.loss_nll_parcel(output, labels)
-        self.log('train/loss_nll', loss_nll,
-                 on_step=True, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
-        self.log('train/loss_nll_parcel', loss_nll_parcel,
-                 on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
 
         self.num_samples_seen += batch_size
         if self.parcel_loss:
@@ -230,9 +233,17 @@ class BaseModelModule(pl.LightningModule):
         else:
             self.num_pixels_seen += batch_size * labels.shape[1] * labels.shape[2]
         self.log_dict({
+            'val_epoch': self.val_epoch,
             'trainer/samples_seen': self.num_samples_seen,
             'trainer/pixels_seen': self.num_pixels_seen,
         }, on_step=True, on_epoch=False, logger=True, batch_size=batch_size)
+
+        loss_nll = self.loss_nll(output, labels)
+        loss_nll_parcel = self.loss_nll_parcel(output, labels)
+        self.log('train/loss_nll', loss_nll,
+                 on_step=True, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
+        self.log('train/loss_nll_parcel', loss_nll_parcel,
+                 on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
 
         loss = loss_nll_parcel if self.parcel_loss else loss_nll
         if torch.isnan(loss):
@@ -252,6 +263,12 @@ class BaseModelModule(pl.LightningModule):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
         batch_size = inputs.shape[0]
         output = self.model(inputs)
+
+        self.log_dict({
+            'val_epoch': self.val_epoch,
+            'trainer/samples_seen': self.num_samples_seen,
+            'trainer/pixels_seen': self.num_pixels_seen,
+        }, on_step=True, on_epoch=False, logger=True, batch_size=batch_size)
 
         # Loss
         loss_nll = self.loss_nll(output, labels)
