@@ -122,6 +122,10 @@ class BaseModelModule(pl.LightningModule):
         self.validation_examples = None
         self.validation_patch_scores = None
 
+    @property
+    def val_epoch(self):
+        return self.current_epoch // self.trainer.check_val_every_n_epoch
+
     def _calculate_class_weights(self, relative_class_frequencies):
         """
         Calculate class weights for the loss function.
@@ -372,6 +376,7 @@ class BaseModelModule(pl.LightningModule):
             examples_table, images = self._get_preview_table_and_samples()
             wandb.log({
                 "epoch": self.current_epoch,
+                "val_epoch": self.val_epoch,
                 "confusion_matrix": wandb_cm,
                 "examples": images,
                 "examples_table": examples_table,
