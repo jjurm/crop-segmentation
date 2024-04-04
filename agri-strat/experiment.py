@@ -99,8 +99,6 @@ def parse_arguments():
 
     parser.add_argument('--num_workers', type=int, default=6, required=False,
                         help='Number of workers to work on dataloader. Default 6')
-    parser.add_argument('--cache_dataset', action='store_true', default=False, required=False,
-                        help='Cache the dataset in memory during the first epoch. Default False.')
     parser.add_argument('--num_gpus', type=int, default=1, required=False,
                         help='Number of gpus to use (per node). Default 1')
     parser.add_argument('--num_nodes', type=int, default=1, required=False,
@@ -125,7 +123,6 @@ def create_datamodule(config, label_encoder, calculated_batch_size):
         requires_norm=config["requires_norm"],
         batch_size=calculated_batch_size,
         num_workers=config["num_workers"],
-        cache_dataset=config["cache_dataset"],
         shuffle_buffer_num_patches=config["shuffle_buffer_num_patches"],
         skip_zero_label_subpatches=config["parcel_loss"] and config["skip_empty_subpatches"],
         # integer limits are passed directly to the trainer instead

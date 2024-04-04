@@ -41,7 +41,6 @@ class MediansDataModule(pl.LightningDataModule):
             requires_norm: bool,
             batch_size: int,
             num_workers: int,
-            cache_dataset: bool,
             shuffle_buffer_num_patches: int,
             skip_zero_label_subpatches: bool,
             limit_train_batches: float = None,
@@ -57,7 +56,6 @@ class MediansDataModule(pl.LightningDataModule):
         self.label_encoder = label_encoder
         self.requires_norm = requires_norm
         self.batch_size = batch_size
-        self.cache_dataset = cache_dataset
         self.shuffle_buffer_num_patches = shuffle_buffer_num_patches
         self.skip_zero_label_subpatches = skip_zero_label_subpatches
         self.limit_train_batches = limit_train_batches
