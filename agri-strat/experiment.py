@@ -39,8 +39,6 @@ def parse_arguments():
 
     parser.add_argument('--devtest', action='store_true', default=False, required=False,
                         help='Perform a dev test run with this model')
-    parser.add_argument('--limit_batches', type=int, nargs="+", default=None, required=False,
-                        help='Limit the number of batches to run during training and validation. Default None')
 
     parser.add_argument('--model', type=str, default="unet", required=False,
                         choices=['unet', 'convstar'],
@@ -83,6 +81,12 @@ def parse_arguments():
                         help='Starting learning rate. Default 1e-1')
     parser.add_argument('--requires_norm', action='store_true', default=False, required=False,
                         help='Normalize data to 0-1 range. Default False')
+    parser.add_argument('--limit_train_batches', type=float, default=None, required=False,
+                        help='Limit the number of batches to run during training (float = fraction, '
+                             'int = num_batches). Default None')
+    parser.add_argument('--limit_val_batches', type=float, default=None, required=False,
+                        help='Limit the number of batches to run during validation (float = fraction, '
+                             'int = num_batches). Default None')
 
     parser.add_argument('--deterministic', action='store_true', default=False, required=False,
                         help='Enforce reproducible results (except functions without a deterministic implementation). '
@@ -104,22 +108,9 @@ def parse_arguments():
 
 
 def get_config(args):
-    exclude_keys = {"tags", "notes", "job_type", "limit_batches"}
-
-    config = {k: v for k, v in vars(args).items() if k not in exclude_keys} | {
-        'limit_train_batches': args.limit_batches[0] if args.limit_batches and args.limit_batches[
-            0] > 0 else None,
-        'limit_val_batches': args.limit_batches[1] if args.limit_batches and len(args.limit_batches) >= 2 and
-                                                      args.limit_batches[1] > 0 else None,
-    }
+    exclude_keys = {"tags", "notes", "job_type"}
+    config = {k: v for k, v in vars(args).items() if k not in exclude_keys}
     return config
-
-
-def get_tags(args, config):
-    tags = args.tags
-    if args.devtest or args.limit_batches:
-        tags.append("devtest")
-    return tags
 
 
 def create_datamodule(config, label_encoder, calculated_batch_size):
@@ -135,6 +126,9 @@ def create_datamodule(config, label_encoder, calculated_batch_size):
         cache_dataset=config["cache_dataset"],
         shuffle_buffer_num_patches=config["shuffle_buffer_num_patches"],
         skip_zero_label_subpatches=config["parcel_loss"] and config["skip_empty_subpatches"],
+        # integer limits are passed directly to the trainer instead
+        limit_train_batches=limit if (limit := config["limit_train_batches"]) % 1.0 != 0 else None,
+        limit_val_batches=limit if (limit := config["limit_val_batches"]) % 1.0 != 0 else None,
     )
     datamodule.prepare_data()
     datamodule.setup('fit')
@@ -243,8 +237,9 @@ def main():
             deterministic="warn" if run.config["deterministic"] else None,
             benchmark=not run.config["deterministic"],
             fast_dev_run=run.config["devtest"],
-            limit_train_batches=run.config["limit_train_batches"],
-            limit_val_batches=run.config["limit_val_batches"],
+            # fractional batch limits are passed directly to the data module instead
+            limit_train_batches=int(limit) if (limit := run.config["limit_train_batches"]) % 1.0 == 0 else None,
+            limit_val_batches=int(limit) if (limit := run.config["limit_val_batches"]) % 1.0 == 0 else None,
             num_sanity_val_steps=2,
             accumulate_grad_batches=accumulate_grad_batches,
             # profiler='simple',

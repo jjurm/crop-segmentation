@@ -26,6 +26,7 @@ class MediansDataset(IterableDataset):
             shuffle: bool = False,
             batched: bool = True,  # When true, each sample is a batch of subpatches
             skip_zero_label_subpatches: bool = False,
+            limit_batches: float = None,
     ) -> None:
         super().__init__()
         self.patch_count = patch_count
@@ -38,6 +39,9 @@ class MediansDataset(IterableDataset):
         self.skip_zero_label_subpatches = skip_zero_label_subpatches
 
         df = pd.read_csv(split_file, header=None, names=["path"])["path"]
+        # only keep limit_batches fraction of the dataset
+        if limit_batches is not None:
+            df = df.head(round(limit_batches * len(df)))
         if shuffle:
             # Shuffling is done before workers are spawned so that it is the same for all workers
             df = df.sample(frac=1)
