@@ -89,6 +89,8 @@ def parse_arguments():
     parser.add_argument('--limit_val_batches', type=float, default=None, required=False,
                         help='Limit the number of batches to run during validation (float = fraction, '
                              'int = num_batches). Default None')
+    parser.add_argument('--check_val_every_n_epoch', type=int, default=1, required=False,
+                        help='Check validation every n epochs. Default 1')
 
     parser.add_argument('--deterministic', action='store_true', default=False, required=False,
                         help='Enforce reproducible results (except functions without a deterministic implementation). '
@@ -228,7 +230,7 @@ def main():
             devices=run.config["num_gpus"],
             num_nodes=run.config["num_nodes"],
             max_epochs=run.config["num_epochs"],
-            check_val_every_n_epoch=1,
+            check_val_every_n_epoch=run.config["check_val_every_n_epoch"],
             precision='32-true',
             callbacks=callbacks,
             logger=logger,
