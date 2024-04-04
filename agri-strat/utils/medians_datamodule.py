@@ -1,10 +1,10 @@
-import torch
-from math import ceil
 from pathlib import Path
 
 import lightning.pytorch as pl
 import pandas as pd
+import torch
 import wandb
+from math import ceil
 from torch.utils.data import DataLoader
 from torch.utils.data.datapipes.iter.utils import IterableWrapperIterDataPipe
 
@@ -63,6 +63,7 @@ class MediansDataModule(pl.LightningDataModule):
         self.limit_train_batches = limit_train_batches
         self.limit_val_batches = limit_val_batches
         self.shuffle_subpatches_within_patch = shuffle_subpatches_within_patch
+        self.seed = seed
 
         self.generator = torch.Generator(device='cpu').manual_seed(seed)
 
@@ -118,6 +119,7 @@ class MediansDataModule(pl.LightningDataModule):
         if stage == 'fit':
             self.dataset_train = MediansDataset(split_file=(self.splits_dir / "train.txt"),
                                                 patch_count=self.patch_counts["train"],
+                                                global_seed=self.seed,
                                                 shuffle=True, batched=False,
                                                 skip_zero_label_subpatches=self.skip_zero_label_subpatches,
                                                 limit_batches=self.limit_train_batches,

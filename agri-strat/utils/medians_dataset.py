@@ -2,7 +2,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import torch
 from torch.utils.data import IterableDataset, get_worker_info
 
 from utils.constants import MEDIANS_DTYPE
@@ -24,6 +23,7 @@ class MediansDataset(IterableDataset):
             bins_range: tuple[int, int],
             label_encoder: LabelEncoder,
             requires_norm: bool,
+            global_seed: int = 0,  # Global seed is used for shuffling patches, set the same for all workers
             shuffle: bool = False,
             batched: bool = True,  # When true, each sample is a batch of subpatches
             skip_zero_label_subpatches: bool = False,
@@ -37,18 +37,14 @@ class MediansDataset(IterableDataset):
         self.bins_range = bins_range
         self.label_encoder = label_encoder
         self.requires_norm = requires_norm
+        self.global_generator = np.random.default_rng(global_seed)
+        self.shuffle = shuffle
         self.batched = batched
         self.skip_zero_label_subpatches = skip_zero_label_subpatches
+        self.limit_batches = limit_batches
         self.shuffle_subpatches_within_patch = shuffle_subpatches_within_patch
 
-        df = pd.read_csv(split_file, header=None, names=["path"])["path"]
-        # only keep limit_batches fraction of the dataset
-        if limit_batches is not None:
-            df = df.head(round(limit_batches * len(df)))
-        if shuffle:
-            # Shuffling is done before workers are spawned so that it is the same for all workers
-            df = df.sample(frac=1)
-        self.split_df = df
+        self.split_df = pd.read_csv(split_file, header=None, names=["path"])["path"]
 
     def load_medians(self, patch_relative_path: Path) -> tuple[np.ndarray, np.ndarray]:
         """
@@ -69,21 +65,27 @@ class MediansDataset(IterableDataset):
         return medians, labels
 
     def get_worker_patches(self):
+        df = self.split_df
+        if self.shuffle:
+            # Shuffling is done based on the global seed so that it is the same for all workers,
+            # but different for each epoch
+            df = df.sample(frac=1, random_state=self.global_generator)
+        # only keep limit_batches fraction of the dataset (after shuffling)
+        if self.limit_batches is not None:
+            df = df.head(round(self.limit_batches * len(df)))
+
         worker_info = get_worker_info()
         if worker_info is None:  # single-process data loading, return the full iterator
-            paths = self.split_df
+            paths = df
         else:  # in a worker process, split workload
             num_workers = worker_info.num_workers
             worker_id = worker_info.id
-            paths = self.split_df.iloc[worker_id::num_workers]
+            paths = df.iloc[worker_id::num_workers]
         return paths
-
-    def get_seed(self):
-        return torch.initial_seed() % 2**32
 
     def __iter__(self):
         paths = self.get_worker_patches()
-        generator = np.random.default_rng(self.get_seed())
+        local_generator = np.random.default_rng()  # will be different for each worker and each epoch
 
         for patch_path in paths:
             medians, labels = self.load_medians(patch_path)
@@ -114,7 +116,7 @@ class MediansDataset(IterableDataset):
 
             if self.shuffle_subpatches_within_patch:
                 # noinspection PyTypeChecker
-                generator.shuffle(batch)
+                local_generator.shuffle(batch)
 
             if self.batched:
                 yield batch
