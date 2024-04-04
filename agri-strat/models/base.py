@@ -265,11 +265,12 @@ class BaseModelModule(pl.LightningModule):
         batch_size = inputs.shape[0]
         output = self.model(inputs)
 
-        self.log_dict({
-            'val_epoch': self.val_epoch,
-            'trainer/samples_seen': self.num_samples_seen,
-            'trainer/pixels_seen': self.num_pixels_seen,
-        }, on_step=True, on_epoch=False, logger=True, batch_size=batch_size)
+        if self.trainer.state.stage != "sanity_check":
+            self.log_dict({
+                'val_epoch': self.val_epoch,
+                'trainer/samples_seen': self.num_samples_seen,
+                'trainer/pixels_seen': self.num_pixels_seen,
+            }, on_step=True, on_epoch=True, logger=True, batch_size=batch_size)
 
         # Loss
         loss_nll = self.loss_nll(output, labels)
