@@ -212,6 +212,7 @@ class BaseModelModule(pl.LightningModule):
         return [optimizer], [{
             'scheduler': lr_scheduler,
             'monitor': self.monitor_metric,
+            'frequency': self.trainer.check_val_every_n_epoch,
         }]
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
