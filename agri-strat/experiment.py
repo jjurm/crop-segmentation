@@ -129,8 +129,8 @@ def create_datamodule(config, label_encoder, calculated_batch_size):
         shuffle_buffer_num_patches=config["shuffle_buffer_num_patches"],
         skip_zero_label_subpatches=config["parcel_loss"] and config["skip_empty_subpatches"],
         # integer limits are passed directly to the trainer instead
-        limit_train_batches=limit if (limit := config["limit_train_batches"]) % 1.0 != 0 else None,
-        limit_val_batches=limit if (limit := config["limit_val_batches"]) % 1.0 != 0 else None,
+        limit_train_batches=limit if (limit := config["limit_train_batches"]) and limit % 1.0 != 0 else None,
+        limit_val_batches=limit if (limit := config["limit_val_batches"]) and limit % 1.0 != 0 else None,
         shuffle_subpatches_within_patch=config["shuffle_subpatches_within_patch"],
     )
     datamodule.prepare_data()
@@ -241,8 +241,8 @@ def main():
             benchmark=not run.config["deterministic"],
             fast_dev_run=run.config["devtest"],
             # fractional batch limits are passed directly to the data module instead
-            limit_train_batches=int(limit) if (limit := run.config["limit_train_batches"]) % 1.0 == 0 else None,
-            limit_val_batches=int(limit) if (limit := run.config["limit_val_batches"]) % 1.0 == 0 else None,
+            limit_train_batches=int(limit) if (limit := run.config["limit_train_batches"]) and limit % 1.0 == 0 else None,
+            limit_val_batches=int(limit) if (limit := run.config["limit_val_batches"]) and limit % 1.0 == 0 else None,
             num_sanity_val_steps=2,
             accumulate_grad_batches=accumulate_grad_batches,
             # profiler='simple',
