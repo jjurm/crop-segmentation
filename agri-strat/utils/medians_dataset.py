@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
 from torch.utils.data import IterableDataset, get_worker_info
 
 from utils.constants import MEDIANS_DTYPE
@@ -27,6 +28,7 @@ class MediansDataset(IterableDataset):
             batched: bool = True,  # When true, each sample is a batch of subpatches
             skip_zero_label_subpatches: bool = False,
             limit_batches: float = None,
+            shuffle_subpatches_within_patch: bool = False,
     ) -> None:
         super().__init__()
         self.patch_count = patch_count
@@ -37,6 +39,7 @@ class MediansDataset(IterableDataset):
         self.requires_norm = requires_norm
         self.batched = batched
         self.skip_zero_label_subpatches = skip_zero_label_subpatches
+        self.shuffle_subpatches_within_patch = shuffle_subpatches_within_patch
 
         df = pd.read_csv(split_file, header=None, names=["path"])["path"]
         # only keep limit_batches fraction of the dataset
@@ -75,8 +78,12 @@ class MediansDataset(IterableDataset):
             paths = self.split_df.iloc[worker_id::num_workers]
         return paths
 
+    def get_seed(self):
+        return torch.initial_seed() % 2**32
+
     def __iter__(self):
         paths = self.get_worker_patches()
+        generator = np.random.default_rng(self.get_seed())
 
         for patch_path in paths:
             medians, labels = self.load_medians(patch_path)
@@ -104,6 +111,10 @@ class MediansDataset(IterableDataset):
                         'patch_path': patch_path,
                         'subpatch_yx': (subpatch_y, subpatch_x),
                     })
+
+            if self.shuffle_subpatches_within_patch:
+                # noinspection PyTypeChecker
+                generator.shuffle(batch)
 
             if self.batched:
                 yield batch

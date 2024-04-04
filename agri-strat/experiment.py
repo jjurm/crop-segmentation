@@ -68,6 +68,8 @@ def parse_arguments():
     parser.add_argument('--skip_empty_subpatches', action='store_true', default=False, required=False,
                         help='Skip subpatches during training that have no pixels of interest (only relevant with '
                              'parcel_loss). Default False.')
+    parser.add_argument('--shuffle_subpatches_within_patch', action='store_true', default=False, required=False,
+                        help='Shuffle subpatches within each patch (only applies to training). Default False.')
 
     parser.add_argument('--num_epochs', type=int, default=10, required=False,
                         help='Number of epochs. Default 10')
@@ -129,6 +131,7 @@ def create_datamodule(config, label_encoder, calculated_batch_size):
         # integer limits are passed directly to the trainer instead
         limit_train_batches=limit if (limit := config["limit_train_batches"]) % 1.0 != 0 else None,
         limit_val_batches=limit if (limit := config["limit_val_batches"]) % 1.0 != 0 else None,
+        shuffle_subpatches_within_patch=config["shuffle_subpatches_within_patch"],
     )
     datamodule.prepare_data()
     datamodule.setup('fit')
