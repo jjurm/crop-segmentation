@@ -54,6 +54,8 @@ def parse_arguments():
     parser.add_argument('--class_weights_weight', type=float, default=1.0, required=False,
                         help='Weight of the class weights in the loss function, interpolating between calculated '
                              'class weights and uniform weights. Default 1.0 = use calculated class weights.')
+    parser.add_argument('--gradient_clip_val', type=float, default=10.0, required=False,
+                        help='Gradient clipping value. Default 10.0')
 
     parser.add_argument('--medians_artifact', type=str, default="1MS_B02B03B04B08_61x61:latest", required=False,
                         help='Wandb artifact of type \'medians\' that references precomputed medians.')
@@ -235,7 +237,7 @@ def main():
             precision='32-true',
             callbacks=callbacks,
             logger=logger,
-            gradient_clip_val=10.0,
+            gradient_clip_val=run.config["gradient_clip_val"],
             # For ensuring determinism with nll_loss2d_forward_out_cuda_template,
             # see https://discuss.pytorch.org/t/pytorchs-non-deterministic-cross-entropy-loss-and-the-problem-of-reproducibility/172180/9
             deterministic="warn" if run.config["deterministic"] else None,
