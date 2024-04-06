@@ -14,6 +14,7 @@ from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, M
 
 from models.convstar import ConvSTAR
 from models.unet import UNet
+from utils.class_weights import ClassWeights
 from utils.constants import IMG_SIZE
 from utils.label_encoder import LabelEncoder
 from utils.medians_metadata import MediansMetadata
@@ -38,11 +39,9 @@ class BaseModelModule(pl.LightningModule):
             model: str,
             label_encoder: LabelEncoder,
             learning_rate,
-            weighted_loss: bool,
-            class_weights_weight: float,  # interpolate between class weights and uniform weights
+            class_weights: ClassWeights,
             bands: list[str],
             medians_metadata: MediansMetadata,
-            class_counts: dict[int, int],
             parcel_loss=False,
             **kwargs,
     ):
@@ -51,44 +50,32 @@ class BaseModelModule(pl.LightningModule):
         -----------
         learning_rate: float, default 1e-3
             The initial learning rate.
-        weighted_loss: boolean
             Use a weighted loss function with precalculated weights per class.
         parcel_loss: boolean, default False
             If True, then a custom loss function is used which takes into account
             only the pixels of the parcels. If False, then all image pixels are
             used in the loss function.
-        class_counts: dict, default None
-            Counts of pixels per class to use for class weights calculation for the loss function.
         """
         super(BaseModelModule, self).__init__()
         self.save_hyperparameters(
-            ignore=["class_counts", "label_encoder", "bands", "num_time_steps", "medians_metadata"])
+            ignore=["label_encoder", "bands", "num_time_steps", "medians_metadata", "class_weights"])
 
         self.label_encoder = label_encoder
         num_classes = label_encoder.num_classes
         self.learning_rate = learning_rate
+        self.class_weights = class_weights
         self.bands = bands
         self.parcel_loss = parcel_loss
         self.medians_metadata = medians_metadata
 
         self.monitor_metric = 'val/f1w_parcel' if self.parcel_loss else 'val/f1w'
 
-        # Calculate class weights and log as a table to Wandb
-        class_counts, relative_class_frequencies = self._calculate_class_counts_frequencies(class_counts, parcel_loss)
-        class_weights = self._calculate_class_weights(relative_class_frequencies)
-        self._log_class_counts_weights(class_counts, class_weights, parcel_loss)
-
-        # Loss function
-        if weighted_loss:
-            class_weights_weighted = class_weights_weight * class_weights + \
-                                     (1 - class_weights_weight) * torch.ones(num_classes)
-            class_weights_weighted = class_weights_weighted.float().cuda()
-        else:
-            class_weights_weighted = None
+        # Log a table of class weights to Wandb
+        wandb.log({"class_weights": self.class_weights.get_wandb_table()})
 
         # Global metrics
-        self.loss_nll = nn.NLLLoss(weight=class_weights_weighted)
-        self.loss_nll_parcel = nn.NLLLoss(weight=class_weights_weighted, ignore_index=0)
+        self.loss_nll = nn.NLLLoss(weight=self.class_weights.class_weights_weighted)
+        self.loss_nll_parcel = nn.NLLLoss(weight=self.class_weights.class_weights_weighted, ignore_index=0)
         self.metric_acc = MulticlassAccuracy(num_classes=num_classes, average="macro")
         self.metric_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="macro", ignore_index=0)
         self.metric_f1w = MulticlassF1Score(num_classes=num_classes, average="weighted")
@@ -114,7 +101,7 @@ class BaseModelModule(pl.LightningModule):
         self.model = get_model_class(model)(
             num_classes=num_classes,
             num_bands=len(bands),
-            relative_class_frequencies=relative_class_frequencies,
+            relative_class_frequencies=self.class_weights.relative_class_frequencies,
             **kwargs)
 
         self.num_samples_seen = 0
@@ -125,39 +112,6 @@ class BaseModelModule(pl.LightningModule):
     @property
     def val_epoch(self):
         return self.current_epoch // self.trainer.check_val_every_n_epoch
-
-    def _calculate_class_weights(self, relative_class_frequencies):
-        """
-        Calculate class weights for the loss function.
-        """
-        n_classes = len(relative_class_frequencies)
-        class_weights = [
-            1 / (n_classes * freq) if freq != 0 else 0
-            for freq in relative_class_frequencies
-        ]
-
-        return torch.tensor(class_weights)
-
-    def _log_class_counts_weights(self, class_counts, class_weights, parcel_loss):
-        class_weights_table = wandb.Table(
-            columns=["IDs", "Class Name", "Pixel count", "Weight"],
-            data=[
-                [",".join(map(str, dataset_labels)), name, class_counts[i], class_weights[i]]
-                for i, dataset_labels, name in self.label_encoder.entries_with_name
-                if (i != 0 or not parcel_loss)  # if parcel_loss, skip the zero class
-            ],
-        )
-        wandb.log({"class_weights": class_weights_table})
-
-    def _calculate_class_counts_frequencies(self, class_counts: dict[int, int], parcel_loss):
-        mapped_counts = np.array([
-            0 if i == 0 and parcel_loss else
-            sum(class_counts[dataset_label] for dataset_label in dataset_labels)
-            for i, dataset_labels in self.label_encoder.entries
-        ])
-        total_count = np.sum(mapped_counts)
-        relative_class_frequencies = mapped_counts / total_count
-        return mapped_counts, relative_class_frequencies
 
     def setup(self, stage: str) -> None:
         wandb.run.summary["monitor_metric"] = self.monitor_metric

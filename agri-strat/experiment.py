@@ -18,6 +18,7 @@ from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 import wandb
 from models.base import BaseModelModule
 from utils.callbacks.batch_counter import BatchCounterCallback
+from utils.class_weights import ClassWeights
 from utils.custom_progress_bar import CustomProgressBar
 from utils.custom_wandb_logger import CustomWandbLogger
 from utils.exception_tracker_callback import ExceptionTrackerCallback
@@ -138,13 +139,13 @@ def create_datamodule(config, label_encoder, calculated_batch_size):
     return datamodule
 
 
-def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataModule):
+def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataModule, class_weights):
     unsaved_params = dict(
-        class_counts=datamodule.pixel_counts['train'],
         label_encoder=label_encoder,
         bands=datamodule.get_bands(),
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
         medians_metadata=datamodule.metadata,
+        class_weights=class_weights,
     )
     if wandb.run.resumed:
         # Load the model from the latest checkpoint
@@ -161,7 +162,6 @@ def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataMod
     # Create a new model
     return BaseModelModule(
         weighted_loss=config["weighted_loss"],
-        class_weights_weight=config["class_weights_weight"],
         model=config["model"],
         parcel_loss=config["parcel_loss"],
         num_layers=3,
@@ -202,7 +202,10 @@ def main():
         print("Creating datamodule, model, trainer...")
         label_encoder = LabelEncoder(run.config["label_encoder_artifact"])
         datamodule = create_datamodule(run.config, label_encoder, calculated_batch_size)
-        model = create_model(run.config, label_encoder, datamodule)
+        class_weights = ClassWeights(class_counts=datamodule.pixel_counts['train'], label_encoder=label_encoder,
+                                     parcel_loss=run.config["parcel_loss"], weighted_loss=run.config["weighted_loss"],
+                                     class_weights_weight=run.config["class_weights_weight"])
+        model = create_model(run.config, label_encoder, datamodule, class_weights)
 
         callbacks = [
             BatchCounterCallback(datamodule),
@@ -241,7 +244,8 @@ def main():
             benchmark=not run.config["deterministic"],
             fast_dev_run=run.config["devtest"],
             # fractional batch limits are passed directly to the data module instead
-            limit_train_batches=int(limit) if (limit := run.config["limit_train_batches"]) and limit % 1.0 == 0 else None,
+            limit_train_batches=int(limit) if (limit := run.config[
+                "limit_train_batches"]) and limit % 1.0 == 0 else None,
             limit_val_batches=int(limit) if (limit := run.config["limit_val_batches"]) and limit % 1.0 == 0 else None,
             num_sanity_val_steps=2,
             accumulate_grad_batches=accumulate_grad_batches,
