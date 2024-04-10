@@ -260,8 +260,8 @@ class BaseModelModule(pl.LightningModule):
 
         # Crop5 metrics
         img_size_h, img_size_w = self.medians_metadata.img_size
-        output_cropped = output[:, :, 3:img_size_h - 3, 3:img_size_w - 3]
-        labels_cropped = labels[:, 3:img_size_h - 3, 3:img_size_w - 3]
+        output_cropped = output[:, :, 5:img_size_h - 5, 5:img_size_w - 5]
+        labels_cropped = labels[:, 5:img_size_h - 5, 5:img_size_w - 5]
         crop5_acc_parcel = self.metric_crop5_acc_parcel(output_cropped, labels_cropped)
         crop5_f1w_parcel = self.metric_crop5_f1w_parcel(output_cropped, labels_cropped)
         crop5_f1ma_parcel = self.metric_crop5_f1ma_parcel(output_cropped, labels_cropped)
