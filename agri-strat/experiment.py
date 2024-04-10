@@ -97,8 +97,8 @@ def parse_arguments():
                         help='Enforce reproducible results (except functions without a deterministic implementation). '
                              'Default False')
     parser.add_argument('--seed', type=int, default=0, required=False, )
-    parser.add_argument('--shuffle_buffer_num_patches', type=int, default=100, required=False,
-                        help='Size of the buffer for shuffling subpatches, given in number of patches. Default 100.')
+    parser.add_argument('--shuffle_buffer_num_patches', type=int, default=0, required=False,
+                        help='Size of the buffer for shuffling subpatches, given in number of patches. Default 0 (no shuffling).')
 
     parser.add_argument('--num_workers', type=int, default=6, required=False,
                         help='Number of workers to work on dataloader. Default 6')

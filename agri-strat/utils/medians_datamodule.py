@@ -142,7 +142,7 @@ class MediansDataModule(pl.LightningDataModule):
         dataloader = DataLoader(self.dataset_train, prefetch_factor=2 * self.batch_size, **self.dataloader_args,
                                 generator=self.generator)
         pipe = IterableWrapperIterDataPipe(dataloader, deepcopy=False) \
-            .shuffle(buffer_size=self.shuffle_buffer_num_patches * self.metadata.num_subpatches_per_patch) \
+            .shuffle(buffer_size=max(1, self.shuffle_buffer_num_patches * self.metadata.num_subpatches_per_patch)) \
             .batch(batch_size=self.batch_size).collate()
         return pipe
 
