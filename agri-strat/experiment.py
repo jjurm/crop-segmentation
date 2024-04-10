@@ -161,7 +161,6 @@ def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataMod
 
     # Create a new model
     return BaseModelModule(
-        weighted_loss=config["weighted_loss"],
         model=config["model"],
         parcel_loss=config["parcel_loss"],
         num_layers=3,
