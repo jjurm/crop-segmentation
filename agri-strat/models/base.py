@@ -74,13 +74,18 @@ class BaseModelModule(pl.LightningModule):
         wandb.log({"class_weights": self.class_weights.get_wandb_table()})
 
         # Global metrics
-        self.loss_nll = nn.NLLLoss(weight=self.class_weights.class_weights_weighted)
+        self.loss_nll = None
+        self.metric_acc = None
+        self.metric_f1w = None
+        self.metric_f1ma = None
+        if not self.parcel_loss:
+            self.loss_nll = nn.NLLLoss(weight=self.class_weights.class_weights_weighted)
+            self.metric_acc = MulticlassAccuracy(num_classes=num_classes, average="macro")
+            self.metric_f1w = MulticlassF1Score(num_classes=num_classes, average="weighted")
+            self.metric_f1ma = MulticlassF1Score(num_classes=num_classes, average="macro")
         self.loss_nll_parcel = nn.NLLLoss(weight=self.class_weights.class_weights_weighted, ignore_index=0)
-        self.metric_acc = MulticlassAccuracy(num_classes=num_classes, average="macro")
         self.metric_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="macro", ignore_index=0)
-        self.metric_f1w = MulticlassF1Score(num_classes=num_classes, average="weighted")
         self.metric_f1w_parcel = MulticlassF1Score(num_classes=num_classes, average="weighted", ignore_index=0)
-        self.metric_f1ma = MulticlassF1Score(num_classes=num_classes, average="macro")
         self.metric_f1ma_parcel = MulticlassF1Score(num_classes=num_classes, average="macro", ignore_index=0)
         self.metric_crop5_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="macro", ignore_index=0)
         self.metric_crop5_f1w_parcel = MulticlassF1Score(num_classes=num_classes, average="weighted", ignore_index=0)
@@ -135,7 +140,7 @@ class BaseModelModule(pl.LightningModule):
                 "val/crop5_f1ma_parcel",
             ]
             for metric in metrics_with_summaries:
-                wandb.define_metric(metric, summary="max,mean,last", step_metric=step_metric)
+                wandb.define_metric(metric, summary="max,last", step_metric=step_metric)
 
         # Log gradients
         if stage == "fit":
@@ -194,14 +199,18 @@ class BaseModelModule(pl.LightningModule):
             'trainer/pixels_seen': self.num_pixels_seen,
         })
 
-        loss_nll = self.loss_nll(output, labels)
         loss_nll_parcel = self.loss_nll_parcel(output, labels)
-        self.log('train/loss_nll', loss_nll,
-                 on_step=True, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
         self.log('train/loss_nll_parcel', loss_nll_parcel,
                  on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
 
-        loss = loss_nll_parcel if self.parcel_loss else loss_nll
+        if self.parcel_loss:
+            loss = loss_nll_parcel
+        else:
+            loss_nll = self.loss_nll(output, labels)
+            self.log('train/loss_nll', loss_nll,
+                     on_step=True, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
+            loss = loss_nll
+
         if torch.isnan(loss):
             return None
         return loss
@@ -228,19 +237,22 @@ class BaseModelModule(pl.LightningModule):
             })
 
         # Loss
-        loss_nll = self.loss_nll(output, labels)
         loss_nll_parcel = self.loss_nll_parcel(output, labels)
-        if not torch.isnan(loss_nll):
-            self.log('val/loss_nll', loss_nll,
-                     on_step=False, on_epoch=True, logger=True, batch_size=batch_size)
         if not torch.isnan(loss_nll_parcel):
             self.log('val/loss_nll_parcel', loss_nll_parcel,
                      on_step=False, on_epoch=True, logger=True, batch_size=batch_size)
+        if not self.parcel_loss:
+            loss_nll = self.loss_nll(output, labels)
+            if not torch.isnan(loss_nll):
+                self.log('val/loss_nll', loss_nll,
+                         on_step=False, on_epoch=True, logger=True, batch_size=batch_size)
 
         # Global metrics
-        acc = self.metric_acc(output, labels)
-        f1w = self.metric_f1w(output, labels)
-        f1ma = self.metric_f1ma(output, labels)
+        acc, f1w, f1ma = None, None, None
+        if not self.parcel_loss:
+            acc = self.metric_acc(output, labels)
+            f1w = self.metric_f1w(output, labels)
+            f1ma = self.metric_f1ma(output, labels)
         acc_parcel = self.metric_acc_parcel(output, labels)
         f1w_parcel = self.metric_f1w_parcel(output, labels)
         f1ma_parcel = self.metric_f1ma_parcel(output, labels)
@@ -263,17 +275,18 @@ class BaseModelModule(pl.LightningModule):
         self._collect_per_patch_scores(batch, output)
         self._collect_preview_samples(batch, output)
 
-        self.log_dict({
-            'val/acc': acc,
-            'val/f1w': f1w,
-        }, on_step=False, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
+        if not self.parcel_loss:
+            self.log_dict({
+                'val/acc': acc,
+                'val/f1w': f1w,
+                'val/f1ma': f1ma,
+            }, on_step=False, on_epoch=True, logger=True, prog_bar=True, batch_size=batch_size)
         self.log_dict({
             'val/acc_parcel': acc_parcel,
             'val/f1w_parcel': f1w_parcel,
+            'val/f1ma_parcel': f1ma_parcel,
         }, on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
         self.log_dict({
-            'val/f1ma': f1ma,
-            'val/f1ma_parcel': f1ma_parcel,
             'val/crop5_acc_parcel': crop5_acc_parcel,
             'val/crop5_f1w_parcel': crop5_f1w_parcel,
             'val/crop5_f1ma_parcel': crop5_f1ma_parcel,
@@ -289,16 +302,10 @@ class BaseModelModule(pl.LightningModule):
 
             if patch_path not in self.validation_patch_scores:
                 self.validation_patch_scores[patch_path] = {
-                    "acc": MulticlassAccuracy(num_classes=self.label_encoder.num_classes,
-                                              average="macro").to(self.device),
                     "acc_parcel": MulticlassAccuracy(num_classes=self.label_encoder.num_classes,
                                                      average="macro", ignore_index=0).to(self.device),
-                    "f1w": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
-                                             average="weighted").to(self.device),
                     "f1w_parcel": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
                                                     average="weighted", ignore_index=0).to(self.device),
-                    "f1ma": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
-                                              average="macro").to(self.device),
                     "f1ma_parcel": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
                                                      average="macro", ignore_index=0).to(self.device),
                     "crop5_acc_parcel": MulticlassAccuracy(num_classes=self.label_encoder.num_classes,
@@ -309,19 +316,29 @@ class BaseModelModule(pl.LightningModule):
                                                            average="macro", ignore_index=0).to(self.device),
                     "n_pixels": 0,
                 }
+                if not self.parcel_loss:
+                    self.validation_patch_scores[patch_path] |= {
+                        "acc": MulticlassAccuracy(num_classes=self.label_encoder.num_classes,
+                                                  average="macro").to(self.device),
+                        "f1w": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
+                                                 average="weighted").to(self.device),
+                        "f1ma": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
+                                                  average="macro").to(self.device),
+                    }
             scores = self.validation_patch_scores[patch_path]
 
             outputs_ = output[i].unsqueeze(0)
             labels_ = batch["labels"][i].unsqueeze(0)
-            scores["acc"].update(outputs_, labels_)
-            scores["f1w"].update(outputs_, labels_)
-            scores["f1ma"].update(outputs_, labels_)
+            if not self.parcel_loss:
+                scores["acc"].update(outputs_, labels_)
+                scores["f1w"].update(outputs_, labels_)
+                scores["f1ma"].update(outputs_, labels_)
             scores["acc_parcel"].update(outputs_, labels_)
             scores["f1w_parcel"].update(outputs_, labels_)
             scores["f1ma_parcel"].update(outputs_, labels_)
             img_size_h, img_size_w = self.medians_metadata.img_size
-            outputs_cropped = outputs_[:, :, 3:img_size_h - 3, 3:img_size_w - 3]
-            labels_cropped = labels_[:, 3:img_size_h - 3, 3:img_size_w - 3]
+            outputs_cropped = outputs_[:, :, 5:img_size_h - 5, 5:img_size_w - 5]
+            labels_cropped = labels_[:, 5:img_size_h - 5, 5:img_size_w - 5]
             scores["crop5_acc_parcel"].update(outputs_cropped, labels_cropped)
             scores["crop5_f1w_parcel"].update(outputs_cropped, labels_cropped)
             scores["crop5_f1ma_parcel"].update(outputs_cropped, labels_cropped)
@@ -401,9 +418,10 @@ class BaseModelModule(pl.LightningModule):
 
     def _compute_per_patch_scores(self):
         for patch_path, scores in self.validation_patch_scores.items():
-            scores["acc"] = scores["acc"].compute().item()
-            scores["f1w"] = scores["f1w"].compute().item()
-            scores["f1ma"] = scores["f1ma"].compute().item()
+            if not self.parcel_loss:
+                scores["acc"] = scores["acc"].compute().item()
+                scores["f1w"] = scores["f1w"].compute().item()
+                scores["f1ma"] = scores["f1ma"].compute().item()
             scores["acc_parcel"] = scores["acc_parcel"].compute().item()
             scores["f1w_parcel"] = scores["f1w_parcel"].compute().item()
             scores["f1ma_parcel"] = scores["f1ma_parcel"].compute().item()
