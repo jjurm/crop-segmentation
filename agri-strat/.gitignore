@@ -6,3 +6,4 @@ artifacts/
 dataset/coco_files/
 dataset/medians/
 dataset/dem/srtm30/
+dataset/netcdf/
