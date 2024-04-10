@@ -3,7 +3,8 @@ test/
 # Wandb artifacts
 artifacts/
 
-dataset/coco_files/
-dataset/medians/
-dataset/dem/srtm30/
-dataset/netcdf/
+# The following folders might also be symlinks
+dataset/coco_files
+dataset/medians
+dataset/dem/srtm30
+dataset/netcdf
