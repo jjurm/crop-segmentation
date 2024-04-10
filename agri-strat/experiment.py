@@ -106,6 +106,9 @@ def parse_arguments():
                         help='Number of gpus to use (per node). Default 1')
     parser.add_argument('--num_nodes', type=int, default=1, required=False,
                         help='Number of nodes to use. Default 1')
+    parser.add_argument('--wandb_watch_log', type=str, default=None, required=False,
+                        choices=["gradients", "parameters", "all"],
+                        help='Log gradients, parameters or both. Default None')
 
     return parser.parse_args()
 
@@ -146,6 +149,7 @@ def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataMod
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
         medians_metadata=datamodule.metadata,
         class_weights=class_weights,
+        wandb_watch_log=config["wandb_watch_log"],
     )
     if wandb.run.resumed:
         # Load the model from the latest checkpoint

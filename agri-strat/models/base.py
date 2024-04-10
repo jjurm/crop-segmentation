@@ -43,6 +43,7 @@ class BaseModelModule(pl.LightningModule):
             bands: list[str],
             medians_metadata: MediansMetadata,
             parcel_loss=False,
+            wandb_watch_log: str = None,
             **kwargs,
     ):
         """
@@ -58,7 +59,7 @@ class BaseModelModule(pl.LightningModule):
         """
         super(BaseModelModule, self).__init__()
         self.save_hyperparameters(
-            ignore=["label_encoder", "bands", "num_time_steps", "medians_metadata", "class_weights"])
+            ignore=["label_encoder", "bands", "num_time_steps", "medians_metadata", "class_weights", "wandb_watch_log"])
 
         self.label_encoder = label_encoder
         num_classes = label_encoder.num_classes
@@ -67,6 +68,7 @@ class BaseModelModule(pl.LightningModule):
         self.bands = bands
         self.parcel_loss = parcel_loss
         self.medians_metadata = medians_metadata
+        self.wandb_watch_log = wandb_watch_log
 
         self.monitor_metric = 'val/f1w_parcel' if self.parcel_loss else 'val/f1w'
 
@@ -144,7 +146,7 @@ class BaseModelModule(pl.LightningModule):
 
         # Log gradients
         if stage == "fit":
-            wandb.watch(self.model, log_freq=100, log="gradients")
+            wandb.watch(self.model, log_freq=100, log=self.wandb_watch_log)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
