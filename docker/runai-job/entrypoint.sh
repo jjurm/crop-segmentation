@@ -12,6 +12,7 @@ fi
 if [ -n "$NODE_NAME" ]; then
   echo "NODE_NAME: $NODE_NAME"
 fi
+sudo /usr/sbin/sshd
 echo "Working directory: $(pwd)"
 echo "Running command: $@"
 exec "$@"

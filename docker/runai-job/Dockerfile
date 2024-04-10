@@ -85,4 +85,4 @@ RUN git config --global credential.helper '!f() { echo username=jjurm; echo pass
 
 WORKDIR "$HOME"
 ENTRYPOINT ["tini", "-g", "--", "/bin/bash", "/entrypoint.sh"]
-CMD ["sudo", "/usr/sbin/sshd", "-D"]
+CMD ["/bin/bash"]
