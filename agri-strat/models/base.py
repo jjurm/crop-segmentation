@@ -187,7 +187,8 @@ class BaseModelModule(pl.LightningModule):
     def on_train_start(self) -> None:
         self.train_samples_df = {
             "patch": [],
-            "subpatch_xy": [],
+            "subpatch_x": [],
+            "subpatch_y": [],
         }
 
     def training_step(self, batch, batch_idx):
@@ -196,7 +197,8 @@ class BaseModelModule(pl.LightningModule):
         output = self.model(inputs)
 
         self.train_samples_df["patch"].extend(batch["patch_path"])
-        self.train_samples_df["subpatch_xy"].extend(batch["subpatch_yx"])
+        self.train_samples_df["subpatch_x"].extend(batch["subpatch_yx"][1])
+        self.train_samples_df["subpatch_y"].extend(batch["subpatch_yx"][0])
 
         self.num_samples_seen += batch_size
         if self.parcel_loss:
