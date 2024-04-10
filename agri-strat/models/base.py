@@ -78,12 +78,11 @@ class BaseModelModule(pl.LightningModule):
         self.metric_acc = None
         self.metric_f1w = None
         self.metric_f1ma = None
+        self.loss_nll = nn.NLLLoss(weight=self.class_weights.class_weights_weighted, reduction="none")
         if not self.parcel_loss:
-            self.loss_nll = nn.NLLLoss(weight=self.class_weights.class_weights_weighted)
             self.metric_acc = MulticlassAccuracy(num_classes=num_classes, average="macro")
             self.metric_f1w = MulticlassF1Score(num_classes=num_classes, average="weighted")
             self.metric_f1ma = MulticlassF1Score(num_classes=num_classes, average="macro")
-        self.loss_nll_parcel = nn.NLLLoss(weight=self.class_weights.class_weights_weighted, ignore_index=0)
         self.metric_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="macro", ignore_index=0)
         self.metric_f1w_parcel = MulticlassF1Score(num_classes=num_classes, average="weighted", ignore_index=0)
         self.metric_f1ma_parcel = MulticlassF1Score(num_classes=num_classes, average="macro", ignore_index=0)
@@ -209,14 +208,16 @@ class BaseModelModule(pl.LightningModule):
             'trainer/pixels_seen': self.num_pixels_seen,
         })
 
-        loss_nll_parcel = self.loss_nll_parcel(output, labels)
+        loss_nll_unreduced = self.loss_nll(output, labels)
+
+        loss_nll_parcel = loss_nll_unreduced[labels != 0].mean()
         self.log('train/loss_nll_parcel', loss_nll_parcel,
                  on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
 
         if self.parcel_loss:
             loss = loss_nll_parcel
         else:
-            loss_nll = self.loss_nll(output, labels)
+            loss_nll = loss_nll_unreduced.mean()
             self.log('train/loss_nll', loss_nll,
                      on_step=True, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
             loss = loss_nll
@@ -258,12 +259,14 @@ class BaseModelModule(pl.LightningModule):
             })
 
         # Loss
-        loss_nll_parcel = self.loss_nll_parcel(output, labels)
+        loss_nll_unreduced = self.loss_nll(output, labels)
+
+        loss_nll_parcel = loss_nll_unreduced[labels != 0].mean()
         if not torch.isnan(loss_nll_parcel):
             self.log('val/loss_nll_parcel', loss_nll_parcel,
                      on_step=False, on_epoch=True, logger=True, batch_size=batch_size)
         if not self.parcel_loss:
-            loss_nll = self.loss_nll(output, labels)
+            loss_nll = loss_nll_unreduced.mean()
             if not torch.isnan(loss_nll):
                 self.log('val/loss_nll', loss_nll,
                          on_step=False, on_epoch=True, logger=True, batch_size=batch_size)
