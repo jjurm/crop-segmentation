@@ -113,6 +113,7 @@ class BaseModelModule(pl.LightningModule):
         self.num_pixels_seen = 0
         self.validation_examples = None
         self.validation_patch_scores = None
+        self.train_samples_df = None
 
     @property
     def val_epoch(self):
@@ -182,10 +183,19 @@ class BaseModelModule(pl.LightningModule):
         self.num_samples_seen = n if (n := checkpoint["samples_seen"]) is not None else 0
         self.num_pixels_seen = n if (n := checkpoint["pixels_seen"]) is not None else 0
 
+    def on_train_start(self) -> None:
+        self.train_samples_df = {
+            "patch": [],
+            "subpatch_xy": [],
+        }
+
     def training_step(self, batch, batch_idx):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
         batch_size = inputs.shape[0]
         output = self.model(inputs)
+
+        self.train_samples_df["patch"].extend(batch["patch_path"])
+        self.train_samples_df["subpatch_xy"].extend(batch["subpatch_yx"])
 
         self.num_samples_seen += batch_size
         if self.parcel_loss:
@@ -214,6 +224,17 @@ class BaseModelModule(pl.LightningModule):
         if torch.isnan(loss):
             return None
         return loss
+
+    def on_train_epoch_end(self) -> None:
+        self._export_train_samples_csv()
+        self.train_samples_df = None
+
+    def _export_train_samples_csv(self):
+        csv_file = self.run_dir / "train_samples" / f"epoch_{self.current_epoch}.csv"
+        csv_file.parent.mkdir(parents=True, exist_ok=True)
+        df = pd.DataFrame(self.train_samples_df)
+        df[["subpatch_x", "subpatch_y"]] = pd.DataFrame(df["subpatch_xy"].tolist(), index=df.index)
+        df.to_csv(csv_file, index=False)
 
     def on_validation_epoch_start(self) -> None:
         self.validation_examples = {
