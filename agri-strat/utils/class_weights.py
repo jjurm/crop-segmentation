@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import wandb
 
 from utils.label_encoder import LabelEncoder
 
@@ -53,7 +54,7 @@ class ClassWeights:
             class_weights_weighted = None
         self.class_weights_weighted = class_weights_weighted
 
-    def get_wandb_table(self, wandb=None):
+    def get_wandb_table(self):
         table = wandb.Table(
             columns=["IDs", "Class Name", "Pixel count", "Weight"],
             data=[
