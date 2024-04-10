@@ -187,11 +187,12 @@ class BaseModelModule(pl.LightningModule):
             self.num_pixels_seen += (labels != 0).sum().item()
         else:
             self.num_pixels_seen += batch_size * labels.shape[1] * labels.shape[2]
-        self.log_dict({
+
+        wandb.log({
             'val_epoch': self.val_epoch,
             'trainer/samples_seen': self.num_samples_seen,
             'trainer/pixels_seen': self.num_pixels_seen,
-        }, on_step=True, on_epoch=False, logger=True, batch_size=batch_size)
+        })
 
         loss_nll = self.loss_nll(output, labels)
         loss_nll_parcel = self.loss_nll_parcel(output, labels)
@@ -220,11 +221,11 @@ class BaseModelModule(pl.LightningModule):
         output = self.model(inputs)
 
         if self.trainer.state.stage != "sanity_check":
-            self.log_dict({
+            wandb.log({
                 'val_epoch': self.val_epoch,
                 'trainer/samples_seen': self.num_samples_seen,
                 'trainer/pixels_seen': self.num_pixels_seen,
-            }, on_step=True, on_epoch=True, logger=True, batch_size=batch_size)
+            })
 
         # Loss
         loss_nll = self.loss_nll(output, labels)
