@@ -88,7 +88,6 @@ class BaseModelModule(pl.LightningModule):
         self.automatic_optimization = False
 
         # Global metrics
-        self.loss_nll = None
         self.metric_acc = None
         self.metric_f1w = None
         self.metric_f1ma = None
@@ -253,9 +252,6 @@ class BaseModelModule(pl.LightningModule):
                      on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss,
                      batch_size=effective_batch_size)
 
-    def on_train_epoch_end(self) -> None:
-        self.loss_nll.reset()
-
     def _update_trainer_scalars(self, batch):
         labels = batch["labels"]
         batch_size = labels.shape[0]
@@ -306,8 +302,6 @@ class BaseModelModule(pl.LightningModule):
             "outputs": [],
         }
         self.validation_patch_scores = {}
-
-        self.loss_nll.reset()
 
     def validation_step(self, batch, batch_idx):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
@@ -463,7 +457,6 @@ class BaseModelModule(pl.LightningModule):
 
         self._update_learning_rate()
 
-        self.loss_nll.reset()
         self.confusion_matrix.reset()
         self.metric_class_precision.reset()
         self.metric_class_recall.reset()
