@@ -84,14 +84,10 @@ class BaseModelModule(pl.LightningModule):
         self.run_dir = Path(wandb.run.dir)
 
         self.monitor_metric = 'val/f1w_parcel' if self.parcel_loss else 'val/f1w'
-
-        self.wandb_logger = cast(WandbLogger, self.logger)
+        self.wandb_logger: WandbLogger | None = None
 
         # Disable automatic optimization
         self.automatic_optimization = False
-
-        # Log a table of class weights to Wandb
-        self.wandb_logger.log_metrics({"class_weights": self.class_weights.get_wandb_table()})
 
         # Global metrics
         self.loss_nll = None
@@ -147,6 +143,7 @@ class BaseModelModule(pl.LightningModule):
         return self.current_epoch // self.trainer.check_val_every_n_epoch
 
     def setup(self, stage: str) -> None:
+        self.wandb_logger = cast(WandbLogger, self.logger)
         wandb.run.summary["monitor_metric"] = self.monitor_metric
 
         step_metric = None
@@ -208,6 +205,10 @@ class BaseModelModule(pl.LightningModule):
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         self.num_samples_seen = n if (n := checkpoint["samples_seen"]) is not None else 0
         self.num_pixels_seen = n if (n := checkpoint["pixels_seen"]) is not None else 0
+
+    def on_train_start(self) -> None:
+        # Log a table of class weights to Wandb
+        self.wandb_logger.log_metrics({"class_weights": self.class_weights.get_wandb_table()})
 
     def training_step(self, block, block_idx):
         """
