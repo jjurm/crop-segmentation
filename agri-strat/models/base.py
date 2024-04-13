@@ -9,7 +9,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import wandb
-from lightning.pytorch.loggers import WandbLogger
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, LRScheduler
 from torchdata.datapipes.iter import IterableWrapper
@@ -84,7 +83,6 @@ class BaseModelModule(pl.LightningModule):
         self.run_dir = Path(wandb.run.dir)
 
         self.monitor_metric = 'val/f1w_parcel' if self.parcel_loss else 'val/f1w'
-        self.wandb_logger: WandbLogger | None = None
 
         # Disable automatic optimization
         self.automatic_optimization = False
@@ -143,7 +141,6 @@ class BaseModelModule(pl.LightningModule):
         return self.current_epoch // self.trainer.check_val_every_n_epoch
 
     def setup(self, stage: str) -> None:
-        self.wandb_logger = cast(WandbLogger, self.logger)
         wandb.run.summary["monitor_metric"] = self.monitor_metric
 
         step_metric = None
@@ -208,7 +205,7 @@ class BaseModelModule(pl.LightningModule):
 
     def on_train_start(self) -> None:
         # Log a table of class weights to Wandb
-        self.wandb_logger.log_metrics({"class_weights": self.class_weights.get_wandb_table()})
+        self.logger.log_metrics({"class_weights": self.class_weights.get_wandb_table()})
 
     def training_step(self, block, block_idx):
         """
@@ -256,6 +253,9 @@ class BaseModelModule(pl.LightningModule):
                      on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss,
                      batch_size=effective_batch_size)
 
+    def on_train_epoch_end(self) -> None:
+        self.loss_nll.reset()
+
     def _update_trainer_scalars(self, batch):
         labels = batch["labels"]
         batch_size = labels.shape[0]
@@ -267,7 +267,7 @@ class BaseModelModule(pl.LightningModule):
             self.num_pixels_seen += batch_size * labels.shape[1] * labels.shape[2]
 
     def _log_trainer_scalars(self):
-        self.wandb_logger.log_metrics({
+        self.logger.log_metrics({
             "epoch": self.current_epoch,
             "val_epoch": self.val_epoch,
             "trainer/samples_seen": self.num_samples_seen,
@@ -307,6 +307,8 @@ class BaseModelModule(pl.LightningModule):
         }
         self.validation_patch_scores = {}
 
+        self.loss_nll.reset()
+
     def validation_step(self, batch, batch_idx):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
         batch_size = inputs.shape[0]
@@ -329,23 +331,22 @@ class BaseModelModule(pl.LightningModule):
                          on_step=False, on_epoch=True, logger=True, batch_size=batch_size)
 
         # Global metrics
-        acc, f1w, f1ma = None, None, None
         if not self.parcel_loss:
-            acc = self.metric_acc(output, labels)
-            f1w = self.metric_f1w(output, labels)
-            f1ma = self.metric_f1ma(output, labels)
-        acc_parcel = self.metric_acc_parcel(output, labels)
-        f1w_parcel = self.metric_f1w_parcel(output, labels)
-        f1ma_parcel = self.metric_f1ma_parcel(output, labels)
+            self.metric_acc(output, labels)
+            self.metric_f1w(output, labels)
+            self.metric_f1ma(output, labels)
+        self.metric_acc_parcel(output, labels)
+        self.metric_f1w_parcel(output, labels)
+        self.metric_f1ma_parcel(output, labels)
         self.confusion_matrix.update(output, labels)
 
         # Crop5 metrics
         img_size_h, img_size_w = self.medians_metadata.img_size
         output_cropped = output[:, :, 5:img_size_h - 5, 5:img_size_w - 5]
         labels_cropped = labels[:, 5:img_size_h - 5, 5:img_size_w - 5]
-        crop5_acc_parcel = self.metric_crop5_acc_parcel(output_cropped, labels_cropped)
-        crop5_f1w_parcel = self.metric_crop5_f1w_parcel(output_cropped, labels_cropped)
-        crop5_f1ma_parcel = self.metric_crop5_f1ma_parcel(output_cropped, labels_cropped)
+        self.metric_crop5_acc_parcel(output_cropped, labels_cropped)
+        self.metric_crop5_f1w_parcel(output_cropped, labels_cropped)
+        self.metric_crop5_f1ma_parcel(output_cropped, labels_cropped)
 
         # Per-class metrics
         self.metric_class_precision.update(output, labels)
@@ -358,19 +359,19 @@ class BaseModelModule(pl.LightningModule):
 
         if not self.parcel_loss:
             self.log_dict({
-                'val/acc': acc,
-                'val/f1w': f1w,
-                'val/f1ma': f1ma,
+                'val/acc': self.metric_acc,
+                'val/f1w': self.metric_f1w,
+                'val/f1ma': self.metric_f1ma,
             }, on_step=False, on_epoch=True, logger=True, prog_bar=True, batch_size=batch_size)
         self.log_dict({
-            'val/acc_parcel': acc_parcel,
-            'val/f1w_parcel': f1w_parcel,
-            'val/f1ma_parcel': f1ma_parcel,
+            'val/acc_parcel': self.metric_acc_parcel,
+            'val/f1w_parcel': self.metric_f1w_parcel,
+            'val/f1ma_parcel': self.metric_f1ma_parcel,
         }, on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
         self.log_dict({
-            'val/crop5_acc_parcel': crop5_acc_parcel,
-            'val/crop5_f1w_parcel': crop5_f1w_parcel,
-            'val/crop5_f1ma_parcel': crop5_f1ma_parcel,
+            'val/crop5_acc_parcel': self.metric_crop5_acc_parcel,
+            'val/crop5_f1w_parcel': self.metric_crop5_f1w_parcel,
+            'val/crop5_f1ma_parcel': self.metric_crop5_f1ma_parcel,
         }, on_step=False, on_epoch=True, logger=True, prog_bar=False, batch_size=batch_size)
 
     def _collect_per_patch_scores(self, batch, output):
@@ -446,7 +447,7 @@ class BaseModelModule(pl.LightningModule):
 
         if self.trainer.state.stage != "sanity_check":
             examples_table, images = self._get_preview_table_and_samples()
-            self.wandb_logger.log_metrics({
+            self.logger.log_metrics({
                 "epoch": self.current_epoch,
                 "val_epoch": self.val_epoch,
                 "trainer/samples_seen": self.num_samples_seen,
@@ -461,6 +462,12 @@ class BaseModelModule(pl.LightningModule):
             })
 
         self._update_learning_rate()
+
+        self.loss_nll.reset()
+        self.confusion_matrix.reset()
+        self.metric_class_precision.reset()
+        self.metric_class_recall.reset()
+        self.metric_class_f1.reset()
 
         self.validation_examples = None
         self.validation_patch_scores = None
