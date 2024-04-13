@@ -10,7 +10,6 @@ from utils.medians_metadata import MediansMetadata
 
 # Divider for normalizing tiff data to [0-1] range
 NORMALIZATION_DIV = 10000
-PRIORITY_COLUMN_NAME = "_priority"
 
 
 class MediansDataset(IterableDataset):
@@ -73,10 +72,6 @@ class MediansDataset(IterableDataset):
             # Shuffling is also done in case we are using the score to order the patches, since thanks to this,
             # patches with the same score will be shuffled.
             df = df.sample(frac=1, random_state=self.global_generator)
-
-        # Sort by priority if it exists
-        if PRIORITY_COLUMN_NAME in df:
-            df = df.sort_values(PRIORITY_COLUMN_NAME, ascending=False, na_position='last')
 
         # only keep limit_batches fraction of the dataset (after shuffling)
         if self.limit_batches is not None:
@@ -141,13 +136,3 @@ class MediansDataset(IterableDataset):
 
     def get_labels_shape(self):
         return *self.medians_metadata.img_size,
-
-    def add_priority_to_patches(self, priority_fn):
-        """
-        Adds a score to each patch in the dataset, based on the score_fn function.
-        :param priority_fn: Takes a row from the dataset and returns a priority in the range [0, inf], where higher
-        means higher priority.
-        :return:
-        """
-        self.split_df[PRIORITY_COLUMN_NAME] = self.split_df.drop(columns=PRIORITY_COLUMN_NAME, errors="ignore") \
-            .apply(priority_fn, axis='columns')

@@ -129,6 +129,9 @@ def get_config(args):
 
 
 def create_datamodule(config, label_encoder, calculated_batch_size, accumulate_grad_batches):
+    assert config["block_size"] >= config["n_batches_per_block"], \
+        "block_size must be greater than or equal to n_batches_per_block."
+
     datamodule = MediansDataModule(
         medians_artifact=config["medians_artifact"],
         medians_path=config["medians_path"] or os.getenv("MEDIANS_PATH", "dataset/medians"),
@@ -210,10 +213,6 @@ def main():
             calculated_batch_size, accumulate_grad_batches = run.config["physical_batch_size"], multiply
         else:
             calculated_batch_size, accumulate_grad_batches = run.config["batch_size"], 1
-
-        if run.config["block_size"] is not None:
-            assert run.config["block_size"] >= run.config["n_batches_per_block"], \
-                "block_size must be greater than or equal to n_batches_per_block."
 
         print("Creating datamodule, model, trainer...")
         label_encoder = LabelEncoder(run.config["label_encoder_artifact"])

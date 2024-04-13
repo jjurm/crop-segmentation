@@ -196,7 +196,6 @@ class BaseModelModule(pl.LightningModule):
 
         return [optimizer], [{
             'scheduler': lr_scheduler,
-            'monitor': self.monitor_metric,
             'frequency': self.trainer.check_val_every_n_epoch,
         }]
 
@@ -292,6 +291,17 @@ class BaseModelModule(pl.LightningModule):
         if torch.isnan(loss_nll_parcel):
             return None
         return loss_nll_parcel
+
+    def _update_learning_rate(self) -> None:
+        self.lr_schedulers()
+        for config in self.trainer.lr_scheduler_configs:
+            assert config.interval == "epoch"
+            if (self.trainer.current_epoch + 1) % config.frequency == 0:
+                monitor_val = self.trainer.callback_metrics.get(self.monitor_metric)
+                assert monitor_val is not None, f"monitor_metric ({self.monitor_metric}) is None in epoch {self.current_epoch}"
+
+                # update LR
+                self.lr_scheduler_step(scheduler=config.scheduler, metric=monitor_val)
 
     def on_train_epoch_end(self) -> None:
         self._export_train_samples_csv()
@@ -464,6 +474,8 @@ class BaseModelModule(pl.LightningModule):
                 "class_scores": wandb.Table(dataframe=class_scores_df),
                 "patch_scores": wandb.Table(dataframe=patch_scores_df),
             })
+
+        self._update_learning_rate()
 
         self.validation_examples = None
         self.validation_patch_scores = None
