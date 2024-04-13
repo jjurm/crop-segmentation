@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import wandb
+from lightning.pytorch.loggers import WandbLogger
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, LRScheduler
 from torchdata.datapipes.iter import IterableWrapper
@@ -84,11 +85,13 @@ class BaseModelModule(pl.LightningModule):
 
         self.monitor_metric = 'val/f1w_parcel' if self.parcel_loss else 'val/f1w'
 
+        self.wandb_logger = cast(WandbLogger, self.logger)
+
         # Disable automatic optimization
         self.automatic_optimization = False
 
         # Log a table of class weights to Wandb
-        wandb.log({"class_weights": self.class_weights.get_wandb_table()})
+        self.wandb_logger.log_metrics({"class_weights": self.class_weights.get_wandb_table()})
 
         # Global metrics
         self.loss_nll = None
@@ -263,7 +266,7 @@ class BaseModelModule(pl.LightningModule):
             self.num_pixels_seen += batch_size * labels.shape[1] * labels.shape[2]
 
     def _log_trainer_scalars(self):
-        wandb.log({
+        self.wandb_logger.log_metrics({
             "epoch": self.current_epoch,
             "val_epoch": self.val_epoch,
             "trainer/samples_seen": self.num_samples_seen,
@@ -442,7 +445,7 @@ class BaseModelModule(pl.LightningModule):
 
         if self.trainer.state.stage != "sanity_check":
             examples_table, images = self._get_preview_table_and_samples()
-            wandb.log({
+            self.wandb_logger.log_metrics({
                 "epoch": self.current_epoch,
                 "val_epoch": self.val_epoch,
                 "trainer/samples_seen": self.num_samples_seen,
