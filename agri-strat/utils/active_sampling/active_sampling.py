@@ -1,26 +1,40 @@
 from functools import partial
 
 import numpy as np
-from torch.utils.data.datapipes.iter.utils import IterableWrapperIterDataPipe
+import torch
+from torch.utils.data import functional_datapipe, IterDataPipe, DataChunk
+from torch.utils.data.datapipes.iter.grouping import UnBatcherIterDataPipe
+from torchdata.datapipes.iter import IterableWrapper
 
 from utils.active_sampling.relevance_score.score_fn import ScoreFn
 
 
-class ScorePerGroup:
-    def __init__(self, monitor_fields: list[str]):
-        self.monitor_fields = monitor_fields
-        self.scores = {}
+@functional_datapipe('unbatch_tensor')
+class TensorUnBatcherIterDataPipe(UnBatcherIterDataPipe):
+    r"""
+    Allows unbatching also tensors and numpy arrays.
+    """
 
-    def get_key(self, batch, i):
-        key = tuple(batch[field][i] for field in self.monitor_fields)
-        return key
+    def __init__(self, datapipe: IterDataPipe):
+        super().__init__(datapipe, unbatch_level=1)
 
-    def update(self, batch, i, score, weight=1.):
-        key = self.get_key(batch, i)
-        if key not in self.scores:
-            self.scores[key] = {"loss": 0., "weight": 0.}
-        self.scores[key]["loss"] += score
-        self.scores[key]["weight"] += weight
+    def _dive(self, element, unbatch_level):
+        if unbatch_level < -1:
+            raise ValueError("unbatch_level must be -1 or >= 0")
+        if unbatch_level == -1:
+            if isinstance(element, (list, DataChunk)):
+                for item in element:
+                    yield from self._dive(item, unbatch_level=-1)
+            else:
+                yield element
+        elif unbatch_level == 0:
+            yield element
+        else:
+            if isinstance(element, (list, DataChunk, torch.Tensor, np.ndarray)):
+                for item in element:
+                    yield from self._dive(item, unbatch_level=unbatch_level - 1)
+            else:
+                raise IndexError(f"unbatch_level {self.unbatch_level} exceeds the depth of the DataPipe")
 
 
 # TODO implement entropy and margin metrics, + any val metric, loss, weighted by pixels or samples,
@@ -58,20 +72,29 @@ class ActiveSampler:
 
         if run_active_sampling:
             score_fn = partial(self.relevancy_score_fn.score, model=model)
-            scores = np.array(IterableWrapperIterDataPipe(block, deepcopy=False) \
-                              .batch(self.batch_size) \
-                              .collate() \
-                              .map(score_fn) \
-                              .unbatch())
+            scores = np.fromiter(
+                IterableWrapper(block, deepcopy=False)
+                .batch(batch_size=self.batch_size)
+                .collate()
+                .map(score_fn)
+                .unbatch_tensor(),
+                dtype=float,
+            )
             assert len(scores) == block_size
 
             # Get want_samples samples with the highest relevancy score
             # ignore NaNs, which are considered large in python
             count_nans = np.isnan(scores).sum()
-            n_ignore_nans = min(count_nans, block_size - want_samples)
-            unsorted_indices = np.argpartition(scores, -want_samples - n_ignore_nans) \
-                [-want_samples - n_ignore_nans:-n_ignore_nans]
-            indices = np.sort(unsorted_indices)  # return samples in their original order
-            block = [block[i] for i in indices]
+            n_ignore = min(count_nans, block_size - want_samples)
+            unsorted_indices = np.argpartition(scores, -want_samples - n_ignore)[-want_samples - n_ignore:]
+            if n_ignore > 0:
+                unsorted_indices = unsorted_indices[:-n_ignore]
+            indices = set(unsorted_indices)
+
+            # The following returns samples in their original order
+            block = IterableWrapper(block, deepcopy=False) \
+                .enumerate() \
+                .filter(lambda x: x[0] in indices) \
+                .map(lambda x: x[1])
 
         return block

@@ -30,3 +30,4 @@ dask
 rasterstats
 pyproj
 swifter
+torchdata

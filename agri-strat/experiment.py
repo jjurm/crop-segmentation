@@ -277,7 +277,7 @@ def main():
                 "limit_train_batches"]) and limit % 1.0 == 0 else None,
             limit_val_batches=int(limit) if (limit := run.config["limit_val_batches"]) and limit % 1.0 == 0 else None,
             num_sanity_val_steps=2,
-            # profiler='simple',
+            # profiler="simple",
         )
 
         print("Training...")

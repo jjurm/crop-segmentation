@@ -17,7 +17,9 @@ class LossScoreFn(OutputLabelsScoreFn):
         # Average over all dimensions except the batch dimension, to get a single score per sample.
         # Calculates the mean loss per sample across non-ignored pixels.
         # TODO test whether mean/sum is better
-        loss_parcel = loss[labels != self.ignore_index]
-        loss_per_sample = loss_parcel.mean(dim=tuple(range(1, loss_parcel.ndim)))
+        mask = labels != self.ignore_index
+        reduce_dims = tuple(range(1, mask.ndim))
+        denom = torch.sum(mask, dim=reduce_dims)
+        loss_per_sample = loss.sum(dim=reduce_dims) / denom
 
         return loss_per_sample

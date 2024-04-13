@@ -1,4 +1,5 @@
 from pathlib import Path
+from pathlib import Path
 from typing import Dict, Any, cast
 
 import lightning.pytorch as pl
@@ -11,7 +12,7 @@ import torch.optim as optim
 import wandb
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, LRScheduler
-from torch.utils.data.datapipes.iter.utils import IterableWrapperIterDataPipe
+from torchdata.datapipes.iter import IterableWrapper
 from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, MulticlassConfusionMatrix, \
     MulticlassPrecision, MulticlassRecall
 
@@ -138,7 +139,6 @@ class BaseModelModule(pl.LightningModule):
         self.num_pixels_seen = 0
         self.validation_examples = None
         self.validation_patch_scores = None
-        self.train_samples_df = None
 
     @property
     def val_epoch(self):
@@ -207,14 +207,6 @@ class BaseModelModule(pl.LightningModule):
         self.num_samples_seen = n if (n := checkpoint["samples_seen"]) is not None else 0
         self.num_pixels_seen = n if (n := checkpoint["pixels_seen"]) is not None else 0
 
-    def on_train_epoch_start(self) -> None:
-        # TODO do not report train samples (only for debugging)
-        self.train_samples_df = {
-            "patch": [],
-            "subpatch_x": [],
-            "subpatch_y": [],
-        }
-
     def training_step(self, block, block_idx):
         """
         :param block: [{
@@ -226,16 +218,16 @@ class BaseModelModule(pl.LightningModule):
         """
 
         block_filtered = self.active_sampler(block, block_idx, self.model)
-        batches = IterableWrapperIterDataPipe(block_filtered, deepcopy=False) \
+        effective_batches = IterableWrapper(block_filtered, deepcopy=False) \
             .batch(batch_size=self.batch_size) \
-            .batch(batch_size=self.accumulate_grad_batches) \
-            .collate()
+            .collate() \
+            .batch(batch_size=self.accumulate_grad_batches)
 
         opt = cast(Optimizer, self.optimizers())
-        for effective_batch in batches:
+        for effective_batch in effective_batches:
             opt.zero_grad()
             total_loss = 0.
-            batch_size = 0
+            effective_batch_size = 0
 
             # accumulate gradients of N batches
             for mini_batch in effective_batch:
@@ -245,7 +237,7 @@ class BaseModelModule(pl.LightningModule):
                 loss = self._compute_loss(output, mini_batch['labels'])
 
                 total_loss += loss.item()
-                batch_size += mini_batch['labels'].shape[0]
+                effective_batch_size += mini_batch['labels'].shape[0]
 
                 # scale losses by 1/N regardless of the len(effective_batch) to keep the weight of samples constant
                 loss = loss / self.accumulate_grad_batches
@@ -258,14 +250,12 @@ class BaseModelModule(pl.LightningModule):
 
             self._log_trainer_scalars()
             self.log('train/loss_nll_parcel', total_loss,
-                     on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
+                     on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss,
+                     batch_size=effective_batch_size)
 
     def _update_trainer_scalars(self, batch):
         labels = batch["labels"]
         batch_size = labels.shape[0]
-        self.train_samples_df["patch"].extend(batch["patch_path"])
-        self.train_samples_df["subpatch_x"].extend(batch["subpatch_yx"][1].cpu().numpy())
-        self.train_samples_df["subpatch_y"].extend(batch["subpatch_yx"][0].cpu().numpy())
 
         self.num_samples_seen += batch_size
         if self.parcel_loss:
@@ -281,9 +271,9 @@ class BaseModelModule(pl.LightningModule):
         })
 
     def _compute_loss(self, output, labels):
-        loss_nll_unreduced = self.loss_nll(output, labels)
         if not self.parcel_loss:
             raise NotImplementedError("parcel_loss=False is not implemented")
+        loss_nll_unreduced = self.loss_nll(output, labels)
         # TODO change to .sum() then divide by the number of pixels to assign constant weight to each pixel.
         #  but probably log .mean()
         loss_nll_parcel = loss_nll_unreduced[labels != 0].mean()
@@ -302,16 +292,6 @@ class BaseModelModule(pl.LightningModule):
 
                 # update LR
                 self.lr_scheduler_step(scheduler=config.scheduler, metric=monitor_val)
-
-    def on_train_epoch_end(self) -> None:
-        self._export_train_samples_csv()
-        self.train_samples_df = None
-
-    def _export_train_samples_csv(self):
-        csv_file = self.run_dir / "train_samples.csv"
-        df = pd.DataFrame(self.train_samples_df)
-        df["epoch"] = self.current_epoch
-        df.to_csv(csv_file, index=False, mode='a', header=not csv_file.exists())
 
     def on_validation_epoch_start(self) -> None:
         self.validation_examples = {

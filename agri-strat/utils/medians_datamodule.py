@@ -6,7 +6,7 @@ import torch
 import wandb
 from math import ceil
 from torch.utils.data import DataLoader
-from torch.utils.data.datapipes.iter.utils import IterableWrapperIterDataPipe
+from torchdata.datapipes.iter import IterableWrapper
 
 from utils.label_encoder import LabelEncoder
 from utils.medians_dataset import MediansDataset
@@ -142,26 +142,26 @@ class MediansDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         """
-        Returns a dataloader that returns blocks of subpatches, uncollated.
+        Returns a pipe that yields blocks of subpatches, uncollated.
         The consumer needs to batch and collate the subpatches itself.
         """
         dataloader = DataLoader(self.dataset_train, prefetch_factor=2 * self.block_size, **self.dataloader_args,
                                 generator=self.generator)
-        pipe = IterableWrapperIterDataPipe(dataloader, deepcopy=False) \
+        pipe = IterableWrapper(dataloader, deepcopy=False) \
             .shuffle(buffer_size=max(1, self.shuffle_buffer_num_patches * self.metadata.num_subpatches_per_patch)) \
             .batch(batch_size=self.block_size)
         return pipe
 
     def val_dataloader(self):
         dataloader = DataLoader(self.dataset_val, **self.dataloader_args)
-        pipe = IterableWrapperIterDataPipe(dataloader, deepcopy=False) \
+        pipe = IterableWrapper(dataloader, deepcopy=False) \
             .unbatch() \
             .batch(batch_size=self.batch_size).collate()
         return pipe
 
     def test_dataloader(self):
         dataloader = DataLoader(self.dataset_test, **self.dataloader_args)
-        pipe = IterableWrapperIterDataPipe(dataloader, deepcopy=False) \
+        pipe = IterableWrapper(dataloader, deepcopy=False) \
             .unbatch() \
             .batch(batch_size=self.batch_size).collate()
         return pipe
@@ -179,8 +179,9 @@ class MediansDataModule(pl.LightningDataModule):
         :param split: train/val/test
         """
         approx_num_samples = self.patch_counts[split] * self.metadata.num_subpatches_per_patch
+        block_size = self.block_size if split == "train" else self.batch_size
         if self.dataloader_args.get("drop_last", False):
-            approx_num_batches = approx_num_samples // self.batch_size
+            approx_num_batches = approx_num_samples // block_size
         else:
-            approx_num_batches = ceil(approx_num_samples / self.batch_size)
+            approx_num_batches = ceil(approx_num_samples / block_size)
         return approx_num_batches
