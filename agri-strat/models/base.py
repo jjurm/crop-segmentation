@@ -1,5 +1,4 @@
 from pathlib import Path
-from pathlib import Path
 from typing import Dict, Any, cast
 
 import lightning.pytorch as pl
@@ -265,9 +264,11 @@ class BaseModelModule(pl.LightningModule):
 
     def _log_trainer_scalars(self):
         wandb.log({
-            'val_epoch': self.val_epoch,
-            'trainer/samples_seen': self.num_samples_seen,
-            'trainer/pixels_seen': self.num_pixels_seen,
+            "epoch": self.current_epoch,
+            "val_epoch": self.val_epoch,
+            "trainer/samples_seen": self.num_samples_seen,
+            "trainer/pixels_seen": self.num_pixels_seen,
+            "trainer/global_step": self.global_step,
         })
 
     def _compute_loss(self, output, labels):
@@ -308,11 +309,7 @@ class BaseModelModule(pl.LightningModule):
         output = self.model(inputs)
 
         if self.trainer.state.stage != "sanity_check":
-            wandb.log({
-                'val_epoch': self.val_epoch,
-                'trainer/samples_seen': self.num_samples_seen,
-                'trainer/pixels_seen': self.num_pixels_seen,
-            })
+            self._log_trainer_scalars()
 
         # Loss
         loss_nll_unreduced = self.loss_nll(output, labels)
@@ -448,6 +445,10 @@ class BaseModelModule(pl.LightningModule):
             wandb.log({
                 "epoch": self.current_epoch,
                 "val_epoch": self.val_epoch,
+                "trainer/samples_seen": self.num_samples_seen,
+                "trainer/pixels_seen": self.num_pixels_seen,
+                "trainer/global_step": self.global_step,
+
                 "confusion_matrix": wandb_cm,
                 "examples": images,
                 "examples_table": examples_table,
