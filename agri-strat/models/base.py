@@ -50,6 +50,7 @@ class BaseModelModule(pl.LightningModule):
             batch_size: int,
             accumulate_grad_batches: int,
             n_batches_per_block: int,
+            gradient_clip_val: float | None,
             parcel_loss=False,
             wandb_watch_log: str = None,
             **kwargs,
@@ -78,6 +79,7 @@ class BaseModelModule(pl.LightningModule):
         self.medians_metadata = medians_metadata
         self.wandb_watch_log = wandb_watch_log
         self.accumulate_grad_batches = accumulate_grad_batches
+        self.gradient_clip_val = gradient_clip_val
         self.run_dir = Path(wandb.run.dir)
 
         self.monitor_metric = 'val/f1w_parcel' if self.parcel_loss else 'val/f1w'
@@ -230,7 +232,7 @@ class BaseModelModule(pl.LightningModule):
             .batch(batch_size=self.accumulate_grad_batches) \
             .collate()
 
-        opt = cast(self.optimizers(), Optimizer)
+        opt = cast(Optimizer, self.optimizers())
         for effective_batch in batches:
             opt.zero_grad()
             total_loss = 0.
@@ -251,7 +253,8 @@ class BaseModelModule(pl.LightningModule):
                 self.manual_backward(loss)
 
             # clip gradients & update weights
-            self.clip_gradients(opt, gradient_clip_val=0.5, gradient_clip_algorithm="norm")
+            if self.gradient_clip_val is not None:
+                self.clip_gradients(opt, gradient_clip_val=self.gradient_clip_val, gradient_clip_algorithm="norm")
             opt.step()
 
             self._log_trainer_scalars()

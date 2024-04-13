@@ -234,6 +234,7 @@ def main():
             batch_size=calculated_batch_size,  # train blocks need to be batched
             accumulate_grad_batches=accumulate_grad_batches,
             n_batches_per_block=run.config["n_batches_per_block"],
+            gradient_clip_val=run.config["gradient_clip_val"],
         )
 
         callbacks = [
@@ -266,7 +267,6 @@ def main():
             precision='32-true',
             callbacks=callbacks,
             logger=logger,
-            gradient_clip_val=run.config["gradient_clip_val"],
             # For ensuring determinism with nll_loss2d_forward_out_cuda_template,
             # see https://discuss.pytorch.org/t/pytorchs-non-deterministic-cross-entropy-loss-and-the-problem-of-reproducibility/172180/9
             deterministic="warn" if run.config["deterministic"] else None,

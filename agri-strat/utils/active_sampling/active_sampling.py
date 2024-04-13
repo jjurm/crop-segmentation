@@ -53,7 +53,7 @@ class ActiveSampler:
         If relevancy_score_fn is None, the block is returned as is.
         """
         want_samples = self.n_batches_per_block * self.accumulate_grad_batches * self.batch_size
-        block_size = block.shape[0]
+        block_size = len(block)
         run_active_sampling = (block_size > want_samples) and (self.relevancy_score_fn is not None)
 
         if run_active_sampling:
