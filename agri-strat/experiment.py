@@ -216,7 +216,12 @@ def main():
 
         print("Creating datamodule, model, trainer...")
         label_encoder = LabelEncoder(run.config["label_encoder_artifact"])
-        datamodule = create_datamodule(run.config, label_encoder, calculated_batch_size)
+        datamodule = create_datamodule(
+            config=run.config,
+            label_encoder=label_encoder,
+            calculated_batch_size=calculated_batch_size,
+            accumulate_grad_batches=accumulate_grad_batches,
+        )
         class_weights = ClassWeights(class_counts=datamodule.pixel_counts['train'], label_encoder=label_encoder,
                                      parcel_loss=run.config["parcel_loss"], weighted_loss=run.config["weighted_loss"],
                                      class_weights_weight=run.config["class_weights_weight"])
