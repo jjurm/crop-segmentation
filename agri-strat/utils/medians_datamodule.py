@@ -41,6 +41,7 @@ class MediansDataModule(pl.LightningDataModule):
             label_encoder: LabelEncoder,
             requires_norm: bool,
             batch_size: int,
+            block_size: int,  # block_size>=batch_size if active sampling is used, otherwise equal. Used for training.
             num_workers: int,
             seed: int,
             shuffle_buffer_num_patches: int,
@@ -58,6 +59,7 @@ class MediansDataModule(pl.LightningDataModule):
         self.label_encoder = label_encoder
         self.requires_norm = requires_norm
         self.batch_size = batch_size
+        self.block_size = block_size
         self.shuffle_buffer_num_patches = shuffle_buffer_num_patches
         self.skip_zero_label_subpatches = skip_zero_label_subpatches
         self.limit_train_batches = limit_train_batches
@@ -139,11 +141,15 @@ class MediansDataModule(pl.LightningDataModule):
             raise ValueError(f"stage = {stage}, expected: 'fit' or 'test'")
 
     def train_dataloader(self):
-        dataloader = DataLoader(self.dataset_train, prefetch_factor=2 * self.batch_size, **self.dataloader_args,
+        """
+        Returns a dataloader that returns blocks of subpatches, uncollated.
+        The consumer needs to batch and collate the subpatches itself.
+        """
+        dataloader = DataLoader(self.dataset_train, prefetch_factor=2 * self.block_size, **self.dataloader_args,
                                 generator=self.generator)
         pipe = IterableWrapperIterDataPipe(dataloader, deepcopy=False) \
             .shuffle(buffer_size=max(1, self.shuffle_buffer_num_patches * self.metadata.num_subpatches_per_patch)) \
-            .batch(batch_size=self.batch_size).collate()
+            .batch(batch_size=self.block_size)
         return pipe
 
     def val_dataloader(self):

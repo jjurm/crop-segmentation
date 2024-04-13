@@ -93,6 +93,11 @@ def parse_arguments():
     parser.add_argument('--check_val_every_n_epoch', type=int, default=1, required=False,
                         help='Check validation every n epochs. Default 1')
 
+    parser.add_argument('--block_size', type=int, default=None, required=False,
+                        help='The size of an active sampling block. When set, the model will be trained with active sampling, otherwise it is equal to the effective batch size. Default None')
+    parser.add_argument('--n_batches_per_block', type=int, default=1, required=False,
+                        help='The number of batches (of effective batch_size) to sample in each active sampling block. Default 1')
+
     parser.add_argument('--deterministic', action='store_true', default=False, required=False,
                         help='Enforce reproducible results (except functions without a deterministic implementation). '
                              'Default False')
@@ -120,7 +125,7 @@ def get_config(args):
     return config
 
 
-def create_datamodule(config, label_encoder, calculated_batch_size):
+def create_datamodule(config, label_encoder, calculated_batch_size, accumulate_grad_batches):
     datamodule = MediansDataModule(
         medians_artifact=config["medians_artifact"],
         medians_path=config["medians_path"] or os.getenv("MEDIANS_PATH", "dataset/medians"),
@@ -128,7 +133,8 @@ def create_datamodule(config, label_encoder, calculated_batch_size):
         bins_range=config["bins_range"],
         label_encoder=label_encoder,
         requires_norm=config["requires_norm"],
-        batch_size=calculated_batch_size,
+        batch_size=calculated_batch_size,  # val and test sets don't use blocks
+        block_size=config["block_size"] or calculated_batch_size,
         num_workers=config["num_workers"],
         seed=config["seed"],
         shuffle_buffer_num_patches=config["shuffle_buffer_num_patches"],
@@ -143,15 +149,14 @@ def create_datamodule(config, label_encoder, calculated_batch_size):
     return datamodule
 
 
-def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataModule, class_weights):
+def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataModule, **kwargs):
     unsaved_params = dict(
         label_encoder=label_encoder,
         bands=datamodule.get_bands(),
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
         medians_metadata=datamodule.metadata,
-        class_weights=class_weights,
         wandb_watch_log=config["wandb_watch_log"],
-    )
+    ) | kwargs
     if wandb.run.resumed:
         # Load the model from the latest checkpoint
         checkpoint_path = Path(wandb.run.dir) / "checkpoints" / "last.ckpt"
@@ -209,7 +214,16 @@ def main():
         class_weights = ClassWeights(class_counts=datamodule.pixel_counts['train'], label_encoder=label_encoder,
                                      parcel_loss=run.config["parcel_loss"], weighted_loss=run.config["weighted_loss"],
                                      class_weights_weight=run.config["class_weights_weight"])
-        model = create_model(run.config, label_encoder, datamodule, class_weights)
+
+        model = create_model(
+            config=run.config,
+            label_encoder=label_encoder,
+            datamodule=datamodule,
+            class_weights=class_weights,
+            batch_size=calculated_batch_size,  # train blocks need to be batched
+            accumulate_grad_batches=accumulate_grad_batches,
+            n_batches_per_block=run.config["n_batches_per_block"],
+        )
 
         callbacks = [
             BatchCounterCallback(datamodule),
@@ -252,7 +266,6 @@ def main():
                 "limit_train_batches"]) and limit % 1.0 == 0 else None,
             limit_val_batches=int(limit) if (limit := run.config["limit_val_batches"]) and limit % 1.0 == 0 else None,
             num_sanity_val_steps=2,
-            accumulate_grad_batches=accumulate_grad_batches,
             # profiler='simple',
         )
 

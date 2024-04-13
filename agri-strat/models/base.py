@@ -1,19 +1,24 @@
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, cast
 
 import lightning.pytorch as pl
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import wandb
+from torch.optim import Optimizer
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, LRScheduler
+from torch.utils.data.datapipes.iter.utils import IterableWrapperIterDataPipe
 from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, MulticlassConfusionMatrix, \
     MulticlassPrecision, MulticlassRecall
 
 from models.convstar import ConvSTAR
 from models.unet import UNet
+from utils.active_sampling.active_sampling import ActiveSampler
+from utils.active_sampling.relevance_score.loss_score_fn import LossScoreFn
 from utils.class_weights import ClassWeights
 from utils.constants import IMG_SIZE
 from utils.label_encoder import LabelEncoder
@@ -42,6 +47,9 @@ class BaseModelModule(pl.LightningModule):
             class_weights: ClassWeights,
             bands: list[str],
             medians_metadata: MediansMetadata,
+            batch_size: int,
+            accumulate_grad_batches: int,
+            n_batches_per_block: int,
             parcel_loss=False,
             wandb_watch_log: str = None,
             **kwargs,
@@ -58,19 +66,24 @@ class BaseModelModule(pl.LightningModule):
             used in the loss function.
         """
         super(BaseModelModule, self).__init__()
-        self.save_hyperparameters(
-            ignore=["label_encoder", "bands", "num_time_steps", "medians_metadata", "class_weights", "wandb_watch_log"])
+        self.save_hyperparameters("model", "bands", "parcel_loss")
 
         self.label_encoder = label_encoder
         num_classes = label_encoder.num_classes
         self.learning_rate = learning_rate
         self.class_weights = class_weights
         self.bands = bands
+        self.batch_size = batch_size
         self.parcel_loss = parcel_loss
         self.medians_metadata = medians_metadata
         self.wandb_watch_log = wandb_watch_log
+        self.accumulate_grad_batches = accumulate_grad_batches
+        self.run_dir = Path(wandb.run.dir)
 
         self.monitor_metric = 'val/f1w_parcel' if self.parcel_loss else 'val/f1w'
+
+        # Disable automatic optimization
+        self.automatic_optimization = False
 
         # Log a table of class weights to Wandb
         wandb.log({"class_weights": self.class_weights.get_wandb_table()})
@@ -101,7 +114,16 @@ class BaseModelModule(pl.LightningModule):
         self.metric_class_f1 = MulticlassF1Score(average=None, num_classes=num_classes,
                                                  ignore_index=0 if parcel_loss else None)
 
-        self.run_dir = Path(wandb.run.dir)
+        self.active_sampler = ActiveSampler(
+            batch_size=batch_size,
+            n_batches_per_block=n_batches_per_block,
+            accumulate_grad_batches=accumulate_grad_batches,
+            relevancy_score_fn=LossScoreFn(
+                loss_fn=F.nll_loss,
+                ignore_index=0 if parcel_loss else None,
+                weight=self.class_weights.class_weights_weighted,
+            ),
+        )
 
         # Create the model
         self.model = get_model_class(model)(
@@ -185,17 +207,60 @@ class BaseModelModule(pl.LightningModule):
         self.num_pixels_seen = n if (n := checkpoint["pixels_seen"]) is not None else 0
 
     def on_train_epoch_start(self) -> None:
+        # TODO do not report train samples (only for debugging)
         self.train_samples_df = {
             "patch": [],
             "subpatch_x": [],
             "subpatch_y": [],
         }
 
-    def training_step(self, batch, batch_idx):
-        inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
-        batch_size = inputs.shape[0]
-        output = self.model(inputs)
+    def training_step(self, block, block_idx):
+        """
+        :param block: [{
+            'medians': torch.Tensor(shape=(T, C, H, W)),
+            'labels': torch.Tensor(shape=(H, W)),
+            ...,
+        }] (len=B)
+        :param block_idx: int
+        """
 
+        block_filtered = self.active_sampler(block, block_idx, self.model)
+        batches = IterableWrapperIterDataPipe(block_filtered, deepcopy=False) \
+            .batch(batch_size=self.batch_size) \
+            .batch(batch_size=self.accumulate_grad_batches) \
+            .collate()
+
+        opt = cast(self.optimizers(), Optimizer)
+        for effective_batch in batches:
+            opt.zero_grad()
+            total_loss = 0.
+            batch_size = 0
+
+            # accumulate gradients of N batches
+            for mini_batch in effective_batch:
+                self._update_trainer_scalars(mini_batch)
+
+                output = self.model(mini_batch['medians'])
+                loss = self._compute_loss(output, mini_batch['labels'])
+
+                total_loss += loss.item()
+                batch_size += mini_batch['labels'].shape[0]
+
+                # scale losses by 1/N regardless of the len(effective_batch) to keep the weight of samples constant
+                loss = loss / self.accumulate_grad_batches
+                self.manual_backward(loss)
+
+            # clip gradients & update weights
+            self.clip_gradients(opt, gradient_clip_val=0.5, gradient_clip_algorithm="norm")
+            opt.step()
+
+            self._log_trainer_scalars()
+            self.log('train/loss_nll_parcel', total_loss,
+                     on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
+
+    def _update_trainer_scalars(self, batch):
+        labels = batch["labels"]
+        batch_size = labels.shape[0]
         self.train_samples_df["patch"].extend(batch["patch_path"])
         self.train_samples_df["subpatch_x"].extend(batch["subpatch_yx"][1].cpu().numpy())
         self.train_samples_df["subpatch_y"].extend(batch["subpatch_yx"][0].cpu().numpy())
@@ -206,29 +271,24 @@ class BaseModelModule(pl.LightningModule):
         else:
             self.num_pixels_seen += batch_size * labels.shape[1] * labels.shape[2]
 
+    def _log_trainer_scalars(self):
         wandb.log({
             'val_epoch': self.val_epoch,
             'trainer/samples_seen': self.num_samples_seen,
             'trainer/pixels_seen': self.num_pixels_seen,
         })
 
+    def _compute_loss(self, output, labels):
         loss_nll_unreduced = self.loss_nll(output, labels)
-
+        if not self.parcel_loss:
+            raise NotImplementedError("parcel_loss=False is not implemented")
+        # TODO change to .sum() then divide by the number of pixels to assign constant weight to each pixel.
+        #  but probably log .mean()
         loss_nll_parcel = loss_nll_unreduced[labels != 0].mean()
-        self.log('train/loss_nll_parcel', loss_nll_parcel,
-                 on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
 
-        if self.parcel_loss:
-            loss = loss_nll_parcel
-        else:
-            loss_nll = loss_nll_unreduced.mean()
-            self.log('train/loss_nll', loss_nll,
-                     on_step=True, on_epoch=True, logger=True, prog_bar=not self.parcel_loss, batch_size=batch_size)
-            loss = loss_nll
-
-        if torch.isnan(loss):
+        if torch.isnan(loss_nll_parcel):
             return None
-        return loss
+        return loss_nll_parcel
 
     def on_train_epoch_end(self) -> None:
         self._export_train_samples_csv()
