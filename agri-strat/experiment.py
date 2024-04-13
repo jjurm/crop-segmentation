@@ -93,12 +93,13 @@ def parse_arguments():
     parser.add_argument('--check_val_every_n_epoch', type=int, default=1, required=False,
                         help='Check validation every n epochs. Default 1')
 
-    parser.add_argument('--block_size', type=int, default=None, required=False,
-                        help='The size of an active sampling block. When set, the model will be trained with active '
-                             'sampling, otherwise it is equal to the effective batch size. Default None')
+    parser.add_argument('--block_size', type=float, default=1.0, required=False,
+                        help='The size of an active sampling block, given as a multiplier of the effective batch size. '
+                             'Can be fractional but must be >=n_batches_per_block. When set, the model will be trained '
+                             'with active sampling. Default 1, i.e. no active sampling.')
     parser.add_argument('--n_batches_per_block', type=int, default=1, required=False,
                         help='The number of batches (of effective batch_size) to sample in each active sampling '
-                             'block. `batch_size * n_batches_per_block <= block_size` must hold. Default 1')
+                             'block. Must be <=block_size. Default 1')
 
     parser.add_argument('--deterministic', action='store_true', default=False, required=False,
                         help='Enforce reproducible results (except functions without a deterministic implementation). '
@@ -136,7 +137,7 @@ def create_datamodule(config, label_encoder, calculated_batch_size, accumulate_g
         label_encoder=label_encoder,
         requires_norm=config["requires_norm"],
         batch_size=calculated_batch_size,  # val and test sets don't use blocks
-        block_size=config["block_size"] or (calculated_batch_size * accumulate_grad_batches),
+        block_size=round(config["block_size"] * config["batch_size"]),
         num_workers=config["num_workers"],
         seed=config["seed"],
         shuffle_buffer_num_patches=config["shuffle_buffer_num_patches"],
@@ -211,8 +212,8 @@ def main():
             calculated_batch_size, accumulate_grad_batches = run.config["batch_size"], 1
 
         if run.config["block_size"] is not None:
-            assert run.config["block_size"] >= run.config["n_batches_per_block"] * run.config["batch_size"], \
-                "block_size must be greater than or equal to n_batches_per_block * batch_size if set."
+            assert run.config["block_size"] >= run.config["n_batches_per_block"], \
+                "block_size must be greater than or equal to n_batches_per_block."
 
         print("Creating datamodule, model, trainer...")
         label_encoder = LabelEncoder(run.config["label_encoder_artifact"])
