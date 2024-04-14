@@ -38,8 +38,8 @@ class TensorUnBatcherIterDataPipe(UnBatcherIterDataPipe):
                 raise IndexError(f"unbatch_level {self.unbatch_level} exceeds the depth of the DataPipe")
 
 
-def _contained_in(indices, index):
-    return index in indices
+def _index_contained_in(indices, x):
+    return x[0] in indices
 
 
 def _get_1(x):
@@ -104,7 +104,7 @@ class ActiveSampler(nn.Module):
             # The following returns samples in their original order
             block = IterableWrapper(block, deepcopy=False) \
                 .enumerate() \
-                .filter(partial(_contained_in, indices)) \
+                .filter(partial(_index_contained_in, indices)) \
                 .map(_get_1)
 
         return block
