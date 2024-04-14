@@ -2,6 +2,7 @@ from functools import partial
 
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.utils.data import functional_datapipe, IterDataPipe, DataChunk
 from torch.utils.data.datapipes.iter.grouping import UnBatcherIterDataPipe
 from torchdata.datapipes.iter import IterableWrapper
@@ -37,11 +38,19 @@ class TensorUnBatcherIterDataPipe(UnBatcherIterDataPipe):
                 raise IndexError(f"unbatch_level {self.unbatch_level} exceeds the depth of the DataPipe")
 
 
+def _contained_in(indices, index):
+    return index in indices
+
+
+def _get_1(x):
+    return x[1]
+
+
 # TODO implement entropy and margin metrics, + any val metric, loss, weighted by pixels or samples,
 #  uncertainty estimation with MC-Dropout,
 #  Reproducible Holdout loss (rhloss)
 #  https://blog.dataiku.com/active-sampling-data-selection-for-efficient-model-training
-class ActiveSampler:
+class ActiveSampler(nn.Module):
     def __init__(
             self,
             batch_size: int,
@@ -54,6 +63,7 @@ class ActiveSampler:
         :param n_batches_per_block: (At most) how many batches to sample in a block.
         :param relevancy_score_fn: A function that computes the relevancy score for each sample in a batch
         """
+        super().__init__()
         self.batch_size = batch_size
         self.n_batches_per_block = n_batches_per_block
         self.accumulate_grad_batches = accumulate_grad_batches
@@ -94,7 +104,7 @@ class ActiveSampler:
             # The following returns samples in their original order
             block = IterableWrapper(block, deepcopy=False) \
                 .enumerate() \
-                .filter(lambda x: x[0] in indices) \
-                .map(lambda x: x[1])
+                .filter(partial(_contained_in, indices)) \
+                .map(_get_1)
 
         return block

@@ -1,12 +1,11 @@
 from pathlib import Path
-from typing import Dict, Any, cast
+from typing import Dict, Any, cast, Type
 
 import lightning.pytorch as pl
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 import wandb
 from torch.optim import Optimizer
@@ -18,7 +17,7 @@ from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, M
 from models.convstar import ConvSTAR
 from models.unet import UNet
 from utils.active_sampling.active_sampling import ActiveSampler
-from utils.active_sampling.relevance_score.loss_score_fn import LossScoreFn
+from utils.active_sampling.relevance_score.loss_score_fn import RHOLossScoreFn
 from utils.class_weights import ClassWeights
 from utils.constants import IMG_SIZE
 from utils.label_encoder import LabelEncoder
@@ -28,7 +27,7 @@ NUM_VALIDATION_PATCH_EXAMPLES = 6
 CLASS_LABEL_IGNORED = 255
 
 
-def get_model_class(model):
+def get_model_class(model) -> Type[nn.Module]:
     if model == "unet":
         model_class = UNet
     elif model == "convstar":
@@ -53,6 +52,7 @@ class BaseModelModule(pl.LightningModule):
             gradient_clip_val: float | None,
             parcel_loss=False,
             wandb_watch_log: str = None,
+            irreducible_loss_model_artifact: str | None = None,
             **kwargs,
     ):
         """
@@ -79,7 +79,9 @@ class BaseModelModule(pl.LightningModule):
         self.medians_metadata = medians_metadata
         self.wandb_watch_log = wandb_watch_log
         self.accumulate_grad_batches = accumulate_grad_batches
+        self.n_batches_per_block = n_batches_per_block
         self.gradient_clip_val = gradient_clip_val
+        self.irreducible_loss_model_artifact = irreducible_loss_model_artifact
         self.run_dir = Path(wandb.run.dir)
 
         self.monitor_metric = 'val/f1w_parcel' if self.parcel_loss else 'val/f1w'
@@ -112,23 +114,28 @@ class BaseModelModule(pl.LightningModule):
         self.metric_class_f1 = MulticlassF1Score(average=None, num_classes=num_classes,
                                                  ignore_index=0 if parcel_loss else None)
 
-        self.active_sampler = ActiveSampler(
-            batch_size=batch_size,
-            n_batches_per_block=n_batches_per_block,
-            accumulate_grad_batches=accumulate_grad_batches,
-            relevancy_score_fn=LossScoreFn(
-                loss_fn=F.nll_loss,
-                ignore_index=0 if parcel_loss else None,
-                weight=self.class_weights.class_weights_weighted,
-            ),
-        )
-
         # Create the model
-        self.model = get_model_class(model)(
+        self.model_class = get_model_class(model)
+        self.model_kwargs = dict(
             num_classes=num_classes,
             num_bands=len(bands),
             relative_class_frequencies=self.class_weights.relative_class_frequencies,
-            **kwargs)
+            **kwargs
+        )
+        self.model = self.model_class(**self.model_kwargs)
+
+        self.active_sampler = ActiveSampler(
+            batch_size=self.batch_size,
+            n_batches_per_block=self.n_batches_per_block,
+            accumulate_grad_batches=self.accumulate_grad_batches,
+            relevancy_score_fn=RHOLossScoreFn(
+                loss_fn=nn.NLLLoss(weight=self.class_weights.class_weights_weighted, reduction="none"),
+                ignore_index=0 if self.parcel_loss else None,
+                irreducible_loss_model_artifact=self.irreducible_loss_model_artifact,
+                irreducible_loss_model_class=self.model_class,
+                irreducible_loss_model_kwargs=self.model_kwargs,
+            ),
+        )
 
         self.num_samples_seen = 0
         self.num_pixels_seen = 0
@@ -142,6 +149,7 @@ class BaseModelModule(pl.LightningModule):
     def setup(self, stage: str) -> None:
         wandb.run.summary["monitor_metric"] = self.monitor_metric
 
+        # Register metrics
         step_metric = None
         if stage == "fit":
             step_metric = "trainer/global_step"

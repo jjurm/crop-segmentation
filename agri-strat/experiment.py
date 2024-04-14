@@ -100,6 +100,8 @@ def parse_arguments():
     parser.add_argument('--n_batches_per_block', type=int, default=1, required=False,
                         help='The number of batches (of effective batch_size) to sample in each active sampling '
                              'block. Must be <=block_size. Default 1')
+    parser.add_argument("--irreducible_loss_model_artifact", type=str, default=None, required=False,
+                        help="Wandb artifact of the model to use for the irreducible loss. Default None")
 
     parser.add_argument('--deterministic', action='store_true', default=False, required=False,
                         help='Enforce reproducible results (except functions without a deterministic implementation). '
@@ -162,6 +164,7 @@ def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataMod
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
         medians_metadata=datamodule.metadata,
         wandb_watch_log=config["wandb_watch_log"],
+        irreducible_loss_model_artifact=config["irreducible_loss_model_artifact"],
     ) | kwargs
     if wandb.run.resumed:
         # Load the model from the latest checkpoint

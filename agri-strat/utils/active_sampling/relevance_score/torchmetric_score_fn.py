@@ -2,11 +2,12 @@ from functools import partial
 from typing import Callable
 
 import torch
+from torch import nn
 
-from score_fn import OutputLabelsScoreFn
+from score_fn import ScoreFn
 
 
-class TorchMetricScoreFn(OutputLabelsScoreFn):
+class TorchMetricScoreFn(ScoreFn):
     """
     A ScoreFn that uses a torch metric to score the model's output on the labels.
     The metric should be a function corresponding to any subclass of MulticlassStatScores.
@@ -19,5 +20,6 @@ class TorchMetricScoreFn(OutputLabelsScoreFn):
     ):
         self.metric = partial(metric, **kwargs | dict(multidim_average="samplewise"))
 
-    def _score(self, output, labels) -> torch.Tensor:
-        return self.metric(output, labels)
+    def score(self, batch, model: nn.Module) -> torch.Tensor:
+        output = model(batch['medians'])
+        return self.metric(output, batch['labels'])
