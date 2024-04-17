@@ -11,6 +11,7 @@ import wandb
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, LRScheduler
 from torchdata.datapipes.iter import IterableWrapper
+from torchmetrics import MeanMetric
 from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, MulticlassConfusionMatrix, \
     MulticlassPrecision, MulticlassRecall
 
@@ -89,11 +90,15 @@ class BaseModelModule(pl.LightningModule):
         # Disable automatic optimization
         self.automatic_optimization = False
 
+        # Loss aggregators
+        self.loss_nll_batch = MeanMetric()
+        self.loss_nll_epoch = MeanMetric()
+        self.loss_nll_val = MeanMetric()
+
         # Global metrics
         self.metric_acc = None
         self.metric_f1w = None
         self.metric_f1ma = None
-        self.loss_nll = nn.NLLLoss(weight=self.class_weights.class_weights_weighted, reduction="none")
         if not self.parcel_loss:
             self.metric_acc = MulticlassAccuracy(num_classes=num_classes, average="macro")
             self.metric_f1w = MulticlassF1Score(num_classes=num_classes, average="weighted")
@@ -137,7 +142,10 @@ class BaseModelModule(pl.LightningModule):
             ),
         )
 
+        self.val_metrics = {}
+        self.num_batches = 0
         self.num_samples_seen = 0
+        self.num_samples_considered = 0
         self.num_pixels_seen = 0
         self.validation_examples = None
         self.validation_patch_scores = None
@@ -203,16 +211,38 @@ class BaseModelModule(pl.LightningModule):
         }]
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        checkpoint["num_batches"] = self.num_batches
         checkpoint["samples_seen"] = self.num_samples_seen
+        checkpoint["samples_considered"] = self.num_samples_considered
         checkpoint["pixels_seen"] = self.num_pixels_seen
 
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        self.num_batches = n if (n := checkpoint["num_batches"]) is not None else 0
         self.num_samples_seen = n if (n := checkpoint["samples_seen"]) is not None else 0
+        self.num_samples_considered = n if (n := checkpoint["samples_considered"]) is not None else 0
         self.num_pixels_seen = n if (n := checkpoint["pixels_seen"]) is not None else 0
+
+    def _get_trainer_metrics(self):
+        return {
+            "trainer/global_step": self.global_step,
+            "trainer/batches": self.num_batches,
+            "trainer/samples_seen": self.num_samples_seen,
+            "trainer/samples_considered": self.num_samples_considered,
+            "trainer/pixels_seen": self.num_pixels_seen,
+        }
+
+    def _get_epoch_metrics(self):
+        return {
+            "epoch": self.current_epoch,
+            "val_epoch": self.val_epoch,
+        }
 
     def on_train_start(self) -> None:
         # Log a table of class weights to Wandb
         self.logger.log_metrics({"class_weights": self.class_weights.get_wandb_table()})
+
+        if not self.parcel_loss:
+            raise NotImplementedError("parcel_loss=False is not implemented")
 
     def training_step(self, block, block_idx):
         """
@@ -229,78 +259,83 @@ class BaseModelModule(pl.LightningModule):
             .batch(batch_size=self.batch_size) \
             .collate() \
             .batch(batch_size=self.accumulate_grad_batches)
+        self.num_samples_considered += len(block)
 
         opt = cast(Optimizer, self.optimizers())
         for effective_batch in effective_batches:
             opt.zero_grad()
-            total_loss = 0.
-            effective_batch_size = 0
 
             # accumulate gradients of N batches
             for mini_batch in effective_batch:
-                self._update_trainer_scalars(mini_batch)
-
-                output = self.model(mini_batch['medians'])
-                loss = self._compute_loss(output, mini_batch['labels'])
-
-                total_loss += loss.item()
-                effective_batch_size += mini_batch['labels'].shape[0]
-
-                # scale losses by 1/N regardless of the len(effective_batch) to keep the weight of samples constant
-                loss = loss / self.accumulate_grad_batches
-                self.manual_backward(loss)
+                self._process_minibatch(mini_batch)
 
             # clip gradients & update weights
             if self.gradient_clip_val is not None:
                 self.clip_gradients(opt, gradient_clip_val=self.gradient_clip_val, gradient_clip_algorithm="norm")
             opt.step()
 
-            self._log_trainer_scalars()
-            self.log('train/loss_nll_parcel', total_loss,
-                     on_step=True, on_epoch=True, logger=True, prog_bar=self.parcel_loss,
-                     batch_size=effective_batch_size)
+            batch_loss = self.loss_nll_batch.compute().cpu().item()
+            batch_size = self.loss_nll_batch.weight.item()
+            self.loss_nll_batch.reset()
 
-    def _update_trainer_scalars(self, batch):
-        labels = batch["labels"]
+            self.num_batches += 1
+            self.num_samples_seen += batch_size
+
+            # Aggregate loss over the epoch
+            self.loss_nll_epoch(batch_loss, weight=batch_size)
+            self.log('train/loss_nll_parcel', batch_loss,
+                     on_step=True, on_epoch=True, logger=False, prog_bar=self.parcel_loss,
+                     batch_size=batch_size)
+
+            # noinspection PyUnresolvedReferences
+            if self.num_batches % self.trainer.log_every_n_steps == 0:
+                wandb.log(self._get_trainer_metrics() | {
+                    "train/loss_nll_parcel_step": batch_loss,
+                })
+
+    def _process_minibatch(self, mini_batch):
+        output = self.model(mini_batch['medians'])
+        labels = mini_batch['labels']
         batch_size = labels.shape[0]
 
-        self.num_samples_seen += batch_size
         if self.parcel_loss:
             self.num_pixels_seen += (labels != 0).sum().item()
         else:
-            self.num_pixels_seen += batch_size * labels.shape[1] * labels.shape[2]
+            self.num_pixels_seen += np.prod(labels.shape)
 
-    def _log_trainer_scalars(self):
-        self.logger.log_metrics({
-            "epoch": self.current_epoch,
-            "val_epoch": self.val_epoch,
-            "trainer/samples_seen": self.num_samples_seen,
-            "trainer/pixels_seen": self.num_pixels_seen,
-            "trainer/global_step": self.global_step,
-        })
+        loss_nll_parcel = self._loss(labels, output)
 
-    def _compute_loss(self, output, labels):
-        if not self.parcel_loss:
-            raise NotImplementedError("parcel_loss=False is not implemented")
-        loss_nll_unreduced = self.loss_nll(output, labels)
-        # TODO change to .sum() then divide by the number of pixels to assign constant weight to each pixel.
-        #  but probably log .mean()
+        # Aggregate loss over the batch
+        self.loss_nll_batch(loss_nll_parcel.item(), weight=batch_size)
+
+        # Calculate gradients.
+        # Since we don't know yet the total number of samples in the current effective batch, to keep the weight o
+        # samples constant we assume each minibatch has the same number of samples, and scale the loss by a constant
+        loss_for_grad = loss_nll_parcel / self.accumulate_grad_batches
+        self.manual_backward(loss_for_grad)
+
+    def _loss(self, labels, output):
+        loss_nll_unreduced = torch.nn.functional.nll_loss(
+            output, labels, weight=self.class_weights.class_weights_weighted, reduction="none")
+        # Compute the mean over non-zero pixels
         loss_nll_parcel = loss_nll_unreduced[labels != 0].mean()
-
-        if torch.isnan(loss_nll_parcel):
-            return None
         return loss_nll_parcel
 
-    def _update_learning_rate(self) -> None:
-        self.lr_schedulers()
-        for config in self.trainer.lr_scheduler_configs:
-            assert config.interval == "epoch"
-            if (self.trainer.current_epoch + 1) % config.frequency == 0:
-                monitor_val = self.trainer.callback_metrics.get(self.monitor_metric)
-                assert monitor_val is not None, f"monitor_metric ({self.monitor_metric}) is None in epoch {self.current_epoch}"
+    def on_train_epoch_end(self) -> None:
+        loss_nll_epoch = self.loss_nll_epoch.compute().cpu().item()
+        self.loss_nll_epoch.reset()
 
-                # update LR
-                self.lr_scheduler_step(scheduler=config.scheduler, metric=monitor_val)
+        self.log('train/loss_nll_parcel_epoch', loss_nll_epoch,
+                 on_step=False, on_epoch=True, logger=False, prog_bar=True)
+
+        wandb.log(
+            self._get_trainer_metrics()
+            | self._get_epoch_metrics()
+            | self.val_metrics
+            | {
+                "train/loss_nll_parcel_epoch": loss_nll_epoch,
+            })
+        self.val_metrics = None
 
     def on_validation_epoch_start(self) -> None:
         self.validation_examples = {
@@ -316,30 +351,18 @@ class BaseModelModule(pl.LightningModule):
         batch_size = inputs.shape[0]
         output = self.model(inputs)
 
-        if self.trainer.state.stage != "sanity_check":
-            self._log_trainer_scalars()
-
-        # Loss
-        loss_nll_unreduced = self.loss_nll(output, labels)
-
-        loss_nll_parcel = loss_nll_unreduced[labels != 0].mean()
-        if not torch.isnan(loss_nll_parcel):
-            self.log('val/loss_nll_parcel', loss_nll_parcel,
-                     on_step=False, on_epoch=True, logger=True, batch_size=batch_size)
-        if not self.parcel_loss:
-            loss_nll = loss_nll_unreduced.mean()
-            if not torch.isnan(loss_nll):
-                self.log('val/loss_nll', loss_nll,
-                         on_step=False, on_epoch=True, logger=True, batch_size=batch_size)
+        loss_nll_parcel = self._loss(labels, output)
+        self.loss_nll_val(loss_nll_parcel.item(), weight=batch_size)
 
         # Global metrics
+        acc, f1w, f1ma = None, None, None
         if not self.parcel_loss:
-            self.metric_acc(output, labels)
-            self.metric_f1w(output, labels)
-            self.metric_f1ma(output, labels)
-        self.metric_acc_parcel(output, labels)
-        self.metric_f1w_parcel(output, labels)
-        self.metric_f1ma_parcel(output, labels)
+            acc = self.metric_acc(output, labels)
+            f1w = self.metric_f1w(output, labels)
+            f1ma = self.metric_f1ma(output, labels)
+        acc_parcel = self.metric_acc_parcel(output, labels)
+        f1w_parcel = self.metric_f1w_parcel(output, labels)
+        f1ma_parcel = self.metric_f1ma_parcel(output, labels)
         self.confusion_matrix.update(output, labels)
 
         # Crop5 metrics
@@ -361,20 +384,13 @@ class BaseModelModule(pl.LightningModule):
 
         if not self.parcel_loss:
             self.log_dict({
-                'val/acc': self.metric_acc,
-                'val/f1w': self.metric_f1w,
-                'val/f1ma': self.metric_f1ma,
-            }, on_step=False, on_epoch=True, logger=True, prog_bar=True, batch_size=batch_size)
+                'val/f1w': f1w,
+            }, on_step=False, on_epoch=True, logger=False, prog_bar=True, batch_size=batch_size)
         self.log_dict({
-            'val/acc_parcel': self.metric_acc_parcel,
-            'val/f1w_parcel': self.metric_f1w_parcel,
-            'val/f1ma_parcel': self.metric_f1ma_parcel,
-        }, on_step=False, on_epoch=True, logger=True, prog_bar=self.parcel_loss, batch_size=batch_size)
-        self.log_dict({
-            'val/crop5_acc_parcel': self.metric_crop5_acc_parcel,
-            'val/crop5_f1w_parcel': self.metric_crop5_f1w_parcel,
-            'val/crop5_f1ma_parcel': self.metric_crop5_f1ma_parcel,
-        }, on_step=False, on_epoch=True, logger=True, prog_bar=False, batch_size=batch_size)
+            'val/acc_parcel': acc_parcel,
+            'val/f1w_parcel': f1w_parcel,
+            'val/f1ma_parcel': f1ma_parcel,
+        }, on_step=False, on_epoch=True, logger=False, prog_bar=self.parcel_loss, batch_size=batch_size)
 
     def _collect_per_patch_scores(self, batch, output):
         for i, patch_path in enumerate(batch["patch_path"]):
@@ -449,29 +465,66 @@ class BaseModelModule(pl.LightningModule):
 
         if self.trainer.state.stage != "sanity_check":
             examples_table, images = self._get_preview_table_and_samples()
-            self.logger.log_metrics({
-                "epoch": self.current_epoch,
-                "val_epoch": self.val_epoch,
-                "trainer/samples_seen": self.num_samples_seen,
-                "trainer/pixels_seen": self.num_pixels_seen,
-                "trainer/global_step": self.global_step,
+            # Validation metrics will be logged only in on_train_epoch_end together with the training metrics
+            self.val_metrics = {
+                "val/loss_nll_parcel": self.loss_nll_val.compute().cpu().item(),
+                "val/acc_parcel": self.metric_acc_parcel.compute().cpu().item(),
+                "val/f1w_parcel": self.metric_f1w_parcel.compute().cpu().item(),
+                "val/f1ma_parcel": self.metric_f1ma_parcel.compute().cpu().item(),
+                "val/crop5_acc_parcel": self.metric_crop5_acc_parcel.compute().cpu().item(),
+                "val/crop5_f1w_parcel": self.metric_crop5_f1w_parcel.compute().cpu().item(),
+                "val/crop5_f1ma_parcel": self.metric_crop5_f1ma_parcel.compute().cpu().item(),
 
                 "confusion_matrix": wandb_cm,
                 "examples": images,
                 "examples_table": examples_table,
                 "class_scores": wandb.Table(dataframe=class_scores_df),
                 "patch_scores": wandb.Table(dataframe=patch_scores_df),
-            })
+            }
+            if not self.parcel_loss:
+                self.val_metrics |= {
+                    "val/acc": self.metric_acc.compute().cpu().item(),
+                    "val/f1w": self.metric_f1w.compute().cpu().item(),
+                    "val/f1ma": self.metric_f1ma.compute().cpu().item(),
+                }
 
-        self._update_learning_rate()
+            self._update_learning_rate()
 
+        self._reset_val_metrics()
+
+        self.validation_examples = None
+        self.validation_patch_scores = None
+
+    def _reset_val_metrics(self):
+        self.loss_nll_val.reset()
+
+        if not self.parcel_loss:
+            self.metric_acc.reset()
+            self.metric_f1w.reset()
+            self.metric_f1ma.reset()
+        self.metric_acc_parcel.reset()
+        self.metric_f1w_parcel.reset()
+        self.metric_f1ma_parcel.reset()
+        self.metric_crop5_acc_parcel.reset()
+        self.metric_crop5_f1w_parcel.reset()
+        self.metric_crop5_f1ma_parcel.reset()
         self.confusion_matrix.reset()
+
         self.metric_class_precision.reset()
         self.metric_class_recall.reset()
         self.metric_class_f1.reset()
 
-        self.validation_examples = None
-        self.validation_patch_scores = None
+    def _update_learning_rate(self) -> None:
+        self.lr_schedulers()
+        for config in self.trainer.lr_scheduler_configs:
+            assert config.interval == "epoch"
+            if (self.trainer.current_epoch + 1) % config.frequency == 0:
+                monitor_val = self.trainer.callback_metrics.get(self.monitor_metric)
+                assert monitor_val is not None, (f"monitor_metric ({self.monitor_metric}) is None in epoch "
+                                                 f"{self.current_epoch}")
+
+                # update LR
+                self.lr_scheduler_step(scheduler=config.scheduler, metric=monitor_val)
 
     def _get_wandb_confusion_matrix(self, confusion_matrix_cpu):
         data = []
