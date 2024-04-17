@@ -67,16 +67,22 @@ class RHOLossScoreFn(LossScoreFn):
             }
             il_model = irreducible_loss_model_class(**irreducible_loss_model_kwargs)
             il_model.load_state_dict(state_dict)
+            il_model.eval()
+
+            il_model = torch.jit.script(il_model)
+            il_model = torch.jit.freeze(il_model)
+
             print("loaded IL model")
             self.il_model = il_model
 
     def _score(self, inputs, labels, model) -> torch.Tensor:
-        model_output = model(inputs)
-        loss = self.loss_fn(model_output, labels)
+        with torch.no_grad():
+            model_output = model(inputs)
+            loss = self.loss_fn(model_output, labels)
 
-        if self.il_model is not None:
-            il_output = self.il_model(inputs)
-            il_loss = self.loss_fn(il_output, labels)
-            loss = loss - il_loss
+            if self.il_model is not None:
+                il_output = self.il_model(inputs)
+                il_loss = self.loss_fn(il_output, labels)
+                loss = loss - il_loss
 
         return loss
