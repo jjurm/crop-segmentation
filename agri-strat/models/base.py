@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Any, cast, Type
+from typing import Dict, Any, cast, Type, Optional
 
 import lightning.pytorch as pl
 import numpy as np
@@ -19,8 +19,10 @@ from models.convstar import ConvSTAR
 from models.unet import UNet
 from utils.active_sampling.active_sampling import ActiveSampler
 from utils.active_sampling.relevance_score.loss_score_fn import RHOLossScoreFn
+from utils.active_sampling.relevance_score.score_fn import ScoreFn
 from utils.class_weights import ClassWeights
 from utils.constants import IMG_SIZE
+from utils.custom_wandb_logger import CustomWandbLogger
 from utils.label_encoder import LabelEncoder
 from utils.medians_metadata import MediansMetadata
 
@@ -53,7 +55,7 @@ class BaseModelModule(pl.LightningModule):
             gradient_clip_val: float | None,
             parcel_loss=False,
             wandb_watch_log: str = None,
-            irreducible_loss_model_artifact: str | None = None,
+            active_sampling_relevancy_score: str = None,
             **kwargs,
     ):
         """
@@ -82,7 +84,6 @@ class BaseModelModule(pl.LightningModule):
         self.accumulate_grad_batches = accumulate_grad_batches
         self.n_batches_per_block = n_batches_per_block
         self.gradient_clip_val = gradient_clip_val
-        self.irreducible_loss_model_artifact = irreducible_loss_model_artifact
         self.run_dir = Path(wandb.run.dir)
 
         self.monitor_metric = 'val/f1w_parcel' if self.parcel_loss else 'val/f1w'
@@ -133,13 +134,7 @@ class BaseModelModule(pl.LightningModule):
             batch_size=self.batch_size,
             n_batches_per_block=self.n_batches_per_block,
             accumulate_grad_batches=self.accumulate_grad_batches,
-            relevancy_score_fn=RHOLossScoreFn(
-                loss_fn=nn.NLLLoss(weight=self.class_weights.class_weights_weighted, reduction="none"),
-                ignore_index=0 if self.parcel_loss else None,
-                irreducible_loss_model_artifact=self.irreducible_loss_model_artifact,
-                irreducible_loss_model_class=self.model_class,
-                irreducible_loss_model_kwargs=self.model_kwargs,
-            ),
+            relevancy_score_fn=self._get_active_sampling_relevancy_score_fn(active_sampling_relevancy_score),
         )
 
         self.val_metrics = {}
@@ -149,6 +144,24 @@ class BaseModelModule(pl.LightningModule):
         self.num_pixels_seen = 0
         self.validation_examples = None
         self.validation_patch_scores = None
+
+    def _get_active_sampling_relevancy_score_fn(self, active_sampling_relevancy_score: str) -> Optional[ScoreFn]:
+        if active_sampling_relevancy_score is None or active_sampling_relevancy_score == "none":
+            return None
+        elif active_sampling_relevancy_score.startswith("rho-loss-"):
+            return RHOLossScoreFn(
+                loss_fn=nn.NLLLoss(weight=self.class_weights.class_weights_weighted, reduction="none"),
+                ignore_index=0 if self.parcel_loss else None,
+                irreducible_loss_model_artifact=active_sampling_relevancy_score.removeprefix("rho-loss-"),
+                irreducible_loss_model_class=self.model_class,
+                irreducible_loss_model_kwargs=self.model_kwargs,
+            )
+        else:
+            raise ValueError(f"Unsupported active_sampling_relevancy_score: {active_sampling_relevancy_score}")
+
+    @property
+    def logger(self) -> CustomWandbLogger:
+        return cast(CustomWandbLogger, super().logger)
 
     @property
     def val_epoch(self):
@@ -240,6 +253,7 @@ class BaseModelModule(pl.LightningModule):
     def on_train_start(self) -> None:
         # Log a table of class weights to Wandb
         self.logger.log_metrics({"class_weights": self.class_weights.get_wandb_table()})
+        self.logger.log_now()
 
         if not self.parcel_loss:
             raise NotImplementedError("parcel_loss=False is not implemented")
@@ -289,9 +303,10 @@ class BaseModelModule(pl.LightningModule):
 
             # noinspection PyUnresolvedReferences
             if self.num_batches % self.trainer.log_every_n_steps == 0:
-                wandb.log(self._get_trainer_metrics() | {
+                self.logger.log_metrics(self._get_trainer_metrics() | {
                     "train/loss_nll_parcel_step": batch_loss,
                 })
+                self.logger.log_now()
 
     def _process_minibatch(self, mini_batch):
         output = self.model(mini_batch['medians'])
@@ -328,14 +343,15 @@ class BaseModelModule(pl.LightningModule):
         self.log('train/loss_nll_parcel_epoch', loss_nll_epoch,
                  on_step=False, on_epoch=True, logger=False, prog_bar=True)
 
-        wandb.log(
+        self.logger.log_metrics(
             self._get_trainer_metrics()
             | self._get_epoch_metrics()
             | self.val_metrics
             | {
                 "train/loss_nll_parcel_epoch": loss_nll_epoch,
             })
-        self.val_metrics = None
+        self.logger.log_now()
+        self.val_metrics = {}
 
     def on_validation_epoch_start(self) -> None:
         self.validation_examples = {
@@ -515,7 +531,6 @@ class BaseModelModule(pl.LightningModule):
         self.metric_class_f1.reset()
 
     def _update_learning_rate(self) -> None:
-        self.lr_schedulers()
         for config in self.trainer.lr_scheduler_configs:
             assert config.interval == "epoch"
             if (self.trainer.current_epoch + 1) % config.frequency == 0:

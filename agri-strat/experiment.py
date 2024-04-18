@@ -13,11 +13,13 @@ from pathlib import Path
 import lightning.pytorch as pl
 import torch
 from lightning import seed_everything
-from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint
+from math import ceil
 
 import wandb
 from models.base import BaseModelModule
 from utils.callbacks.batch_counter import BatchCounterCallback
+from utils.callbacks.custom_lr_monitor import CustomLearningRateMonitor
 from utils.class_weights import ClassWeights
 from utils.custom_progress_bar import CustomProgressBar
 from utils.custom_wandb_logger import CustomWandbLogger
@@ -73,7 +75,7 @@ def parse_arguments():
                         help='Shuffle subpatches within each patch (only applies to training). Default False.')
 
     parser.add_argument('--num_epochs', type=int, default=10, required=False,
-                        help='Number of epochs. Default 10')
+                        help='Number of epochs. Also scaled by --block_size. Default 10')
     parser.add_argument('--batch_size', type=int, default=4, required=False,
                         help='If physical_batch_size=None, behaves as the conventional batch_size. Otherwise, '
                              'sets the effective batch size and must be smaller than or a multiply of '
@@ -91,17 +93,20 @@ def parse_arguments():
                         help='Limit the number of batches to run during validation (float = fraction, '
                              'int = num_batches). Default None')
     parser.add_argument('--check_val_every_n_epoch', type=int, default=1, required=False,
-                        help='Check validation every n epochs. Default 1')
+                        help='Check validation every n epochs. Also scaled by --block_size. Default 1')
 
     parser.add_argument('--block_size', type=float, default=1.0, required=False,
-                        help='The size of an active sampling block, given as a multiplier of the effective batch size. '
-                             'Can be fractional but must be >=n_batches_per_block. When set, the model will be trained '
-                             'with active sampling. Default 1, i.e. no active sampling.')
+                        help='The size of an active sampling block, given as a multiplier of the number of samples to '
+                             'be fed to the model; can be fractional. block_size=2.0 means that the number of samples '
+                             'considered will be double the number of samples fed to the model. This also scales the '
+                             '--num_epochs and --check_val_every_n_epoch parameters proportionally. When set to 1.0 '
+                             '(default), the model will not be trained with active sampling. Default 1.0')
     parser.add_argument('--n_batches_per_block', type=int, default=1, required=False,
                         help='The number of batches (of effective batch_size) to sample in each active sampling '
-                             'block. Must be <=block_size. Default 1')
-    parser.add_argument("--irreducible_loss_model_artifact", type=str, default=None, required=False,
-                        help="Wandb artifact of the model to use for the irreducible loss. Default None")
+                             'block. Controls the active sampling frequency. Default 1, i.e. sample every batch')
+    parser.add_argument('--active_sampling_relevancy_score', type=str, default="none", required=False,
+                        help='The relevancy score function to use for active sampling. Choices: ["none", '
+                             '"rho-loss-<irreducible_loss_model_artifact>"]. Default none')
 
     parser.add_argument('--deterministic', action='store_true', default=False, required=False,
                         help='Enforce reproducible results (except functions without a deterministic implementation). '
@@ -131,9 +136,6 @@ def get_config(args):
 
 
 def create_datamodule(config, label_encoder, calculated_batch_size, accumulate_grad_batches):
-    assert config["block_size"] >= config["n_batches_per_block"], \
-        "block_size must be greater than or equal to n_batches_per_block."
-
     datamodule = MediansDataModule(
         medians_artifact=config["medians_artifact"],
         medians_path=config["medians_path"] or os.getenv("MEDIANS_PATH", "dataset/medians"),
@@ -142,7 +144,7 @@ def create_datamodule(config, label_encoder, calculated_batch_size, accumulate_g
         label_encoder=label_encoder,
         requires_norm=config["requires_norm"],
         batch_size=calculated_batch_size,  # val and test sets don't use blocks
-        block_size=round(config["block_size"] * config["batch_size"]),
+        block_size=round(config["block_size"] * config["n_batches_per_block"] * config["batch_size"]),
         num_workers=config["num_workers"],
         seed=config["seed"],
         shuffle_buffer_num_patches=config["shuffle_buffer_num_patches"],
@@ -164,7 +166,7 @@ def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataMod
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
         medians_metadata=datamodule.metadata,
         wandb_watch_log=config["wandb_watch_log"],
-        irreducible_loss_model_artifact=config["irreducible_loss_model_artifact"],
+        active_sampling_relevancy_score=config["active_sampling_relevancy_score"],
     ) | kwargs
     if wandb.run.resumed:
         # Load the model from the latest checkpoint
@@ -243,7 +245,7 @@ def main():
         callbacks = [
             BatchCounterCallback(datamodule),
             ExceptionTrackerCallback(),
-            LearningRateMonitor(),
+            CustomLearningRateMonitor(),
             ModelCheckpoint(
                 dirpath=Path(wandb.run.dir) / "checkpoints",
                 filename='ckpt_epoch={epoch:02d}',
@@ -265,8 +267,8 @@ def main():
             accelerator="auto",
             devices=run.config["num_gpus"],
             num_nodes=run.config["num_nodes"],
-            max_epochs=run.config["num_epochs"],
-            check_val_every_n_epoch=run.config["check_val_every_n_epoch"],
+            max_epochs=ceil(run.config["num_epochs"] * run.config["block_size"]),
+            check_val_every_n_epoch=round(run.config["check_val_every_n_epoch"] * run.config["block_size"]),
             precision='32-true',
             callbacks=callbacks,
             logger=logger,

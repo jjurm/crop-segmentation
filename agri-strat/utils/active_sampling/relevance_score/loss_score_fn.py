@@ -67,12 +67,13 @@ class RHOLossScoreFn(LossScoreFn):
             }
             il_model = irreducible_loss_model_class(**irreducible_loss_model_kwargs)
             il_model.load_state_dict(state_dict)
+
+            for param in il_model.parameters():
+                param.requires_grad = False
+
             il_model.eval()
 
-            il_model = torch.jit.script(il_model)
-            il_model = torch.jit.freeze(il_model)
-
-            print("loaded IL model")
+            print(f"loaded IL model from artifact: {irreducible_loss_model_artifact}")
             self.il_model = il_model
 
     def _score(self, inputs, labels, model) -> torch.Tensor:

@@ -2,21 +2,41 @@
 Like WandbLogger, but also cleans up model artifacts without an alias.
 """
 from pathlib import Path
+from typing import Mapping, Optional
 
 import wandb
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.loggers.utilities import _scan_checkpoints
+from lightning_fabric.utilities.logger import _add_prefix
 from torch import Tensor
 
 
 class CustomWandbLogger(WandbLogger):
+    """
+    Modifies the WandbLogger in the following:
+    - log_metrics() doesn't log metrics immediately, but aggregates them and waits for a call to log_now()
+    - cleans up model artifacts without an alias.
+    """
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         assert self._checkpoint_name is not None, "The checkpoint name must be set."
 
         self._custom_wandb_api = wandb.Api(overrides={"project": self.experiment.project})
+        self.aggregated_metrics = {}
+
+    def log_metrics(self, metrics: Mapping[str, float], step: Optional[int] = None) -> None:
+        metrics = _add_prefix(metrics, self._prefix, self.LOGGER_JOIN_CHAR)
+        if step is not None:
+            metrics_dict = dict(metrics, **{"trainer/global_step": step})
+        else:
+            metrics_dict = metrics
+        self.aggregated_metrics.update(metrics_dict)
+
+    def log_now(self):
+        self.experiment.log(self.aggregated_metrics)
+        self.aggregated_metrics = {}
 
     def after_save_checkpoint(self, checkpoint_callback: ModelCheckpoint) -> None:
         super().after_save_checkpoint(checkpoint_callback)
