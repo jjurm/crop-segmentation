@@ -103,9 +103,12 @@ class ActiveSampler(nn.Module):
         """
         want_samples = self.n_batches_per_block * self.accumulate_grad_batches * self.batch_size
         block_size = len(block)
-        run_active_sampling = (block_size > want_samples) and (self.relevancy_score_fn is not None)
+        run_active_sampling = block_size > want_samples
 
         if run_active_sampling:
+            if self.relevancy_score_fn is None:
+                raise ValueError("relevancy_score_fn must be provided if block_size is larger than 1.")
+
             with torch.no_grad():
                 score_fn = partial(self.relevancy_score_fn.score, model=model)
                 scores = np.fromiter(
