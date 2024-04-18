@@ -1,11 +1,10 @@
 from pathlib import Path
-from typing import Dict, Any, cast, Optional
+from typing import Dict, Any, cast
 
 import lightning.pytorch as pl
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.optim as optim
 import wandb
 from torch.optim import Optimizer
@@ -16,9 +15,7 @@ from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, M
     MulticlassPrecision, MulticlassRecall
 
 from models.model_class import get_model_class
-from utils.active_sampling.active_sampling import ActiveSampler
-from utils.active_sampling.relevance_score.loss_score_fn import RHOLossScoreFn
-from utils.active_sampling.relevance_score.score_fn import ScoreFn
+from utils.active_sampling.active_sampling import ActiveSampler, get_active_sampling_relevancy_score_fn
 from utils.class_weights import ClassWeights
 from utils.constants import IMG_SIZE
 from utils.custom_wandb_logger import CustomWandbLogger
@@ -124,7 +121,11 @@ class BaseModelModule(pl.LightningModule):
             batch_size=self.batch_size,
             n_batches_per_block=self.n_batches_per_block,
             accumulate_grad_batches=self.accumulate_grad_batches,
-            relevancy_score_fn=self._get_active_sampling_relevancy_score_fn(active_sampling_relevancy_score),
+            relevancy_score_fn=get_active_sampling_relevancy_score_fn(
+                active_sampling_relevancy_score=active_sampling_relevancy_score,
+                class_weights=self.class_weights,
+                parcel_loss=self.parcel_loss,
+            )
         )
 
         self.val_metrics = {}
@@ -134,18 +135,6 @@ class BaseModelModule(pl.LightningModule):
         self.num_pixels_seen = 0
         self.validation_examples = None
         self.validation_patch_scores = None
-
-    def _get_active_sampling_relevancy_score_fn(self, active_sampling_relevancy_score: str) -> Optional[ScoreFn]:
-        if active_sampling_relevancy_score is None or active_sampling_relevancy_score == "none":
-            return None
-        elif active_sampling_relevancy_score.startswith("rho-loss-"):
-            return RHOLossScoreFn(
-                loss_fn=nn.NLLLoss(weight=self.class_weights.class_weights_weighted, reduction="none"),
-                ignore_index=0 if self.parcel_loss else None,
-                irreducible_loss_model_artifact=active_sampling_relevancy_score.removeprefix("rho-loss-"),
-            )
-        else:
-            raise ValueError(f"Unsupported active_sampling_relevancy_score: {active_sampling_relevancy_score}")
 
     @property
     def logger(self) -> CustomWandbLogger:
@@ -199,6 +188,7 @@ class BaseModelModule(pl.LightningModule):
         # Log gradients
         if stage == "fit":
             wandb.watch(self.model, log_freq=100, log=self.wandb_watch_log)
+
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
 

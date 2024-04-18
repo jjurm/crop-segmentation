@@ -41,8 +41,8 @@ class LossScoreFn(AbstractLossScoreFn):
         self.loss_fn = loss_fn
 
     def _score(self, inputs, labels, model) -> torch.Tensor:
-        output = model(inputs)
-        return self.loss_fn(output, labels)
+        model_output = model(inputs)
+        return self.loss_fn(model_output, labels)
 
 
 class RHOLossScoreFn(LossScoreFn):
@@ -76,13 +76,11 @@ class RHOLossScoreFn(LossScoreFn):
             self.il_model = il_model
 
     def _score(self, inputs, labels, model) -> torch.Tensor:
-        with torch.no_grad():
-            model_output = model(inputs)
-            loss = self.loss_fn(model_output, labels)
+        loss = super()._score(inputs, labels, model)
 
-            if self.il_model is not None:
-                il_output = self.il_model(inputs)
-                il_loss = self.loss_fn(il_output, labels)
-                loss = loss - il_loss
+        if self.il_model is not None:
+            il_output = self.il_model(inputs)
+            il_loss = self.loss_fn(il_output, labels)
+            loss = loss - il_loss
 
         return loss

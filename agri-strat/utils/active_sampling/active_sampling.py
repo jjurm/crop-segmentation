@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Optional
 
 import numpy as np
 import torch
@@ -7,7 +8,9 @@ from torch.utils.data import functional_datapipe, IterDataPipe, DataChunk
 from torch.utils.data.datapipes.iter.grouping import UnBatcherIterDataPipe
 from torchdata.datapipes.iter import IterableWrapper
 
+from utils.active_sampling.relevance_score.loss_score_fn import RHOLossScoreFn, LossScoreFn
 from utils.active_sampling.relevance_score.score_fn import ScoreFn
+from utils.class_weights import ClassWeights
 
 
 @functional_datapipe('unbatch_tensor')
@@ -36,6 +39,28 @@ class TensorUnBatcherIterDataPipe(UnBatcherIterDataPipe):
                     yield from self._dive(item, unbatch_level=unbatch_level - 1)
             else:
                 raise IndexError(f"unbatch_level {self.unbatch_level} exceeds the depth of the DataPipe")
+
+
+def get_active_sampling_relevancy_score_fn(
+        active_sampling_relevancy_score: str,
+        class_weights: ClassWeights,
+        parcel_loss: bool,
+) -> Optional[ScoreFn]:
+    if active_sampling_relevancy_score is None or active_sampling_relevancy_score == "none":
+        return None
+    elif active_sampling_relevancy_score.startswith("rho-loss-"):
+        return RHOLossScoreFn(
+            loss_fn=nn.NLLLoss(weight=class_weights.class_weights_weighted, reduction="none"),
+            ignore_index=0 if parcel_loss else None,
+            irreducible_loss_model_artifact=active_sampling_relevancy_score.removeprefix("rho-loss-"),
+        )
+    elif active_sampling_relevancy_score == "loss":
+        return LossScoreFn(
+            loss_fn=nn.NLLLoss(weight=class_weights.class_weights_weighted, reduction="none"),
+            ignore_index=0 if parcel_loss else None,
+        )
+    else:
+        raise ValueError(f"Unsupported active_sampling_relevancy_score: {active_sampling_relevancy_score}")
 
 
 def _index_contained_in(indices, x):
@@ -81,25 +106,26 @@ class ActiveSampler(nn.Module):
         run_active_sampling = (block_size > want_samples) and (self.relevancy_score_fn is not None)
 
         if run_active_sampling:
-            score_fn = partial(self.relevancy_score_fn.score, model=model)
-            scores = np.fromiter(
-                IterableWrapper(block, deepcopy=False)
-                .batch(batch_size=self.batch_size)
-                .collate()
-                .map(score_fn)
-                .unbatch_tensor(),
-                dtype=float,
-            )
-            assert len(scores) == block_size
+            with torch.no_grad():
+                score_fn = partial(self.relevancy_score_fn.score, model=model)
+                scores = np.fromiter(
+                    IterableWrapper(block, deepcopy=False)
+                    .batch(batch_size=self.batch_size)
+                    .collate()
+                    .map(score_fn)
+                    .unbatch_tensor(),
+                    dtype=float,
+                )
+                assert len(scores) == block_size
 
-            # Get want_samples samples with the highest relevancy score
-            # ignore NaNs, which are considered large in python
-            count_nans = np.isnan(scores).sum()
-            n_ignore = min(count_nans, block_size - want_samples)
-            unsorted_indices = np.argpartition(scores, -want_samples - n_ignore)[-want_samples - n_ignore:]
-            if n_ignore > 0:
-                unsorted_indices = unsorted_indices[:-n_ignore]
-            indices = set(unsorted_indices)
+                # Get want_samples samples with the highest relevancy score
+                # ignore NaNs, which are considered large in python
+                count_nans = np.isnan(scores).sum()
+                n_ignore = min(count_nans, block_size - want_samples)
+                unsorted_indices = np.argpartition(scores, -want_samples - n_ignore)[-want_samples - n_ignore:]
+                if n_ignore > 0:
+                    unsorted_indices = unsorted_indices[:-n_ignore]
+                indices = set(unsorted_indices)
 
             # The following returns samples in their original order
             block = IterableWrapper(block, deepcopy=False) \
