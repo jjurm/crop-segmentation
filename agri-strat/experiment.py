@@ -46,6 +46,8 @@ def parse_arguments():
     parser.add_argument('--model', type=str, default="unet", required=False,
                         choices=['unet', 'convstar'],
                         help='Model to use. One of [\'unet\', \'convstar\']')
+    parser.add_argument("--num_layers", type=int, default=3, required=False,
+                        help="Number of layers in the model. Default 3.")
     parser.add_argument('--label_encoder_artifact', type=str, default="s4a_labels:latest", required=False,
                         help='Wandb artifact of type \'label_encoder\' that defines classes to be predicted.')
     parser.add_argument('--parcel_loss', action='store_true', default=False, required=False,
@@ -184,7 +186,7 @@ def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataMod
     return BaseModelModule(
         model=config["model"],
         parcel_loss=config["parcel_loss"],
-        num_layers=3,
+        num_layers=config["num_layers"],
         learning_rate=config["learning_rate"],
         **unsaved_params,
     )

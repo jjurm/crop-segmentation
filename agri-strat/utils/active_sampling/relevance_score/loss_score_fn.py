@@ -1,10 +1,10 @@
 from abc import abstractmethod
-from typing import Type
 
 import torch
 import wandb
 from torch import nn
 
+from models.model_class import get_model_class
 from utils.active_sampling.relevance_score.score_fn import ScoreFn
 
 
@@ -50,8 +50,6 @@ class RHOLossScoreFn(LossScoreFn):
             self,
             loss_fn: nn.Module,
             irreducible_loss_model_artifact: str | None,
-            irreducible_loss_model_class: Type[nn.Module],
-            irreducible_loss_model_kwargs: dict,
             ignore_index: int = None,
     ):
         super().__init__(loss_fn, ignore_index)
@@ -65,7 +63,8 @@ class RHOLossScoreFn(LossScoreFn):
                 for k, v in model_ckpt["state_dict"].items()
                 if k.startswith("model.")
             }
-            il_model = irreducible_loss_model_class(**irreducible_loss_model_kwargs)
+            il_model_class = get_model_class(model_ckpt["hyper_parameters"]["model"])
+            il_model = il_model_class(**model_ckpt["hyper_parameters"]["model_kwargs"])
             il_model.load_state_dict(state_dict)
 
             for param in il_model.parameters():

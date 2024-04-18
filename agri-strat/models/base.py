@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Any, cast, Type, Optional
+from typing import Dict, Any, cast, Optional
 
 import lightning.pytorch as pl
 import numpy as np
@@ -15,8 +15,7 @@ from torchmetrics import MeanMetric
 from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, MulticlassConfusionMatrix, \
     MulticlassPrecision, MulticlassRecall
 
-from models.convstar import ConvSTAR
-from models.unet import UNet
+from models.model_class import get_model_class
 from utils.active_sampling.active_sampling import ActiveSampler
 from utils.active_sampling.relevance_score.loss_score_fn import RHOLossScoreFn
 from utils.active_sampling.relevance_score.score_fn import ScoreFn
@@ -28,16 +27,6 @@ from utils.medians_metadata import MediansMetadata
 
 NUM_VALIDATION_PATCH_EXAMPLES = 6
 CLASS_LABEL_IGNORED = 255
-
-
-def get_model_class(model) -> Type[nn.Module]:
-    if model == "unet":
-        model_class = UNet
-    elif model == "convstar":
-        model_class = ConvSTAR
-    else:
-        raise ValueError(f"model = {model}, expected: 'unet' or 'convstar'")
-    return model_class
 
 
 class BaseModelModule(pl.LightningModule):
@@ -70,7 +59,7 @@ class BaseModelModule(pl.LightningModule):
             used in the loss function.
         """
         super(BaseModelModule, self).__init__()
-        self.save_hyperparameters("model", "bands", "parcel_loss")
+        self.save_hyperparameters("model", "parcel_loss")
 
         self.label_encoder = label_encoder
         num_classes = label_encoder.num_classes
@@ -121,14 +110,13 @@ class BaseModelModule(pl.LightningModule):
                                                  ignore_index=0 if parcel_loss else None)
 
         # Create the model
-        self.model_class = get_model_class(model)
-        self.model_kwargs = dict(
+        self.hparams["model_kwargs"] = dict(
             num_classes=num_classes,
             num_bands=len(bands),
             relative_class_frequencies=self.class_weights.relative_class_frequencies,
             **kwargs
         )
-        self.model = self.model_class(**self.model_kwargs)
+        self.model = get_model_class(model)(**self.hparams["model_kwargs"])
 
         self.active_sampler = ActiveSampler(
             batch_size=self.batch_size,
@@ -153,8 +141,6 @@ class BaseModelModule(pl.LightningModule):
                 loss_fn=nn.NLLLoss(weight=self.class_weights.class_weights_weighted, reduction="none"),
                 ignore_index=0 if self.parcel_loss else None,
                 irreducible_loss_model_artifact=active_sampling_relevancy_score.removeprefix("rho-loss-"),
-                irreducible_loss_model_class=self.model_class,
-                irreducible_loss_model_kwargs=self.model_kwargs,
             )
         else:
             raise ValueError(f"Unsupported active_sampling_relevancy_score: {active_sampling_relevancy_score}")
