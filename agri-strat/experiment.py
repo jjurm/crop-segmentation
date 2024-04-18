@@ -30,8 +30,9 @@ from utils.medians_datamodule import MediansDataModule
 
 def parse_arguments():
     # Parse user arguments
-    parser = argparse.ArgumentParser()
+    parser_with_groups = argparse.ArgumentParser()
 
+    parser = parser_with_groups.add_argument_group('job')
     parser.add_argument('--job_type', type=str, default="train", required=False,
                         choices=['train', 'val'],
                         help='Type of job to perform. One of [\'train\', \'val\']')
@@ -40,26 +41,9 @@ def parse_arguments():
     parser.add_argument('--notes', type=str, default=None, required=False,
                         help='Note stored with the wandb job.')
 
-    parser.add_argument('--devtest', action='store_true', default=False, required=False,
-                        help='Perform a dev test run with this model')
-
-    parser.add_argument('--model', type=str, default="unet", required=False,
-                        choices=['unet', 'convstar'],
-                        help='Model to use. One of [\'unet\', \'convstar\']')
-    parser.add_argument("--num_layers", type=int, default=3, required=False,
-                        help="Number of layers in the model. Default 3.")
+    parser = parser_with_groups.add_argument_group('data')
     parser.add_argument('--label_encoder_artifact', type=str, default="s4a_labels:latest", required=False,
                         help='Wandb artifact of type \'label_encoder\' that defines classes to be predicted.')
-    parser.add_argument('--parcel_loss', action='store_true', default=False, required=False,
-                        help='Use a loss function that takes into account parcel pixels only.')
-    parser.add_argument('--weighted_loss', action='store_true', default=False, required=False,
-                        help='Use a weighted loss function with precalculated weights per class. Default False.')
-    parser.add_argument('--class_weights_weight', type=float, default=1.0, required=False,
-                        help='Weight of the class weights in the loss function, interpolating between calculated '
-                             'class weights and uniform weights. Default 1.0 = use calculated class weights.')
-    parser.add_argument('--gradient_clip_val', type=float, default=10.0, required=False,
-                        help='Gradient clipping value. Default 10.0')
-
     parser.add_argument('--medians_artifact', type=str, default="1MS_B02B03B04B08_61x61:latest", required=False,
                         help='Wandb artifact of type \'medians\' that references precomputed medians.')
     parser.add_argument('--medians_path', type=str, default=None, required=False,
@@ -70,14 +54,43 @@ def parse_arguments():
     parser.add_argument('--bins_range', type=int, nargs=2, default=[4, 9], required=False,
                         help='Specify to limit the range of the time bins (one-indexed, inclusive on both ends). '
                              'Default: [4, 9].')
+    parser.add_argument('--requires_norm', action='store_true', default=False, required=False,
+                        help='Normalize data to 0-1 range. Default False')
+
+    parser = parser_with_groups.add_argument_group('data_loading')
+    parser.add_argument('--seed', type=int, default=0, required=False, )
     parser.add_argument('--skip_empty_subpatches', action='store_true', default=False, required=False,
                         help='Skip subpatches during training that have no pixels of interest (only relevant with '
                              'parcel_loss). Default False.')
     parser.add_argument('--shuffle_subpatches_within_patch', action='store_true', default=False, required=False,
                         help='Shuffle subpatches within each patch (only applies to training). Default False.')
+    parser.add_argument('--num_workers', type=int, default=6, required=False,
+                        help='Number of workers to work on dataloader. Default 6')
+    parser.add_argument('--shuffle_buffer_num_patches', type=int, default=0, required=False,
+                        help='Size of the buffer for shuffling subpatches, given in the number of patches. Default 0 '
+                             '(no shuffling).')
 
+    parser = parser_with_groups.add_argument_group('model')
+    parser.add_argument('--model', type=str, default="unet", required=False,
+                        choices=['unet', 'convstar'],
+                        help='Model to use. One of [\'unet\', \'convstar\']')
+    parser.add_argument("--num_layers", type=int, default=3, required=False,
+                        help="Number of layers in the model. Default 3.")
+
+    parser = parser_with_groups.add_argument_group('loss')
+    parser.add_argument('--parcel_loss', action='store_true', default=False, required=False,
+                        help='Use a loss function that takes into account parcel pixels only.')
+    parser.add_argument('--weighted_loss', action='store_true', default=False, required=False,
+                        help='Use a weighted loss function with precalculated weights per class. Default False.')
+    parser.add_argument('--class_weights_weight', type=float, default=1.0, required=False,
+                        help='Weight of the class weights in the loss function, interpolating between calculated '
+                             'class weights and uniform weights. Default 1.0 = use calculated class weights.')
+
+    parser = parser_with_groups.add_argument_group('training')
     parser.add_argument('--num_epochs', type=int, default=10, required=False,
-                        help='Number of epochs. Also scaled by --block_size. Default 10')
+                    help='Number of epochs. Also scaled by --block_size. Default 10')
+    parser.add_argument('--check_val_every_n_epoch', type=int, default=1, required=False,
+                        help='Check validation every n epochs. Also scaled by --block_size. Default 1')
     parser.add_argument('--batch_size', type=int, default=4, required=False,
                         help='If physical_batch_size=None, behaves as the conventional batch_size. Otherwise, '
                              'sets the effective batch size and must be smaller than or a multiply of '
@@ -86,17 +99,29 @@ def parse_arguments():
                         help='If set and smaller than batch_size, sets the batch_size the model receives in each step.')
     parser.add_argument('--learning_rate', type=float, default=1e-1, required=False,
                         help='Starting learning rate. Default 1e-1')
-    parser.add_argument('--requires_norm', action='store_true', default=False, required=False,
-                        help='Normalize data to 0-1 range. Default False')
+    parser.add_argument('--gradient_clip_val', type=float, default=10.0, required=False,
+                        help='Gradient clipping value. Default 10.0')
+    parser.add_argument('--deterministic', action='store_true', default=False, required=False,
+                        help='Enforce reproducible results (except functions without a deterministic implementation). '
+                             'Default False')
+
+    parser = parser_with_groups.add_argument_group('hardware')
+    parser.add_argument('--num_gpus', type=int, default=1, required=False,
+                        help='Number of gpus to use (per node). Default 1')
+    parser.add_argument('--num_nodes', type=int, default=1, required=False,
+                        help='Number of nodes to use. Default 1')
+
+    parser = parser_with_groups.add_argument_group('development')
+    parser.add_argument('--devtest', action='store_true', default=False, required=False,
+                        help='Perform a dev test run with this model')
     parser.add_argument('--limit_train_batches', type=float, default=None, required=False,
                         help='Limit the number of batches to run during training (float = fraction, '
                              'int = num_batches). Default None')
     parser.add_argument('--limit_val_batches', type=float, default=None, required=False,
                         help='Limit the number of batches to run during validation (float = fraction, '
                              'int = num_batches). Default None')
-    parser.add_argument('--check_val_every_n_epoch', type=int, default=1, required=False,
-                        help='Check validation every n epochs. Also scaled by --block_size. Default 1')
 
+    parser = parser_with_groups.add_argument_group('active_sampling')
     parser.add_argument('--block_size', type=float, default=1.0, required=False,
                         help='The size of an active sampling block, given as a multiplier of the number of samples to '
                              'be fed to the model; can be fractional. block_size=2.0 means that the number of samples '
@@ -110,25 +135,12 @@ def parse_arguments():
                         help='The relevancy score function to use for active sampling. Choices: ["none", '
                              '"rho-loss-<irreducible_loss_model_artifact>"]. Default none')
 
-    parser.add_argument('--deterministic', action='store_true', default=False, required=False,
-                        help='Enforce reproducible results (except functions without a deterministic implementation). '
-                             'Default False')
-    parser.add_argument('--seed', type=int, default=0, required=False, )
-    parser.add_argument('--shuffle_buffer_num_patches', type=int, default=0, required=False,
-                        help='Size of the buffer for shuffling subpatches, given in the number of patches. Default 0 '
-                             '(no shuffling).')
-
-    parser.add_argument('--num_workers', type=int, default=6, required=False,
-                        help='Number of workers to work on dataloader. Default 6')
-    parser.add_argument('--num_gpus', type=int, default=1, required=False,
-                        help='Number of gpus to use (per node). Default 1')
-    parser.add_argument('--num_nodes', type=int, default=1, required=False,
-                        help='Number of nodes to use. Default 1')
+    parser = parser_with_groups.add_argument_group('logging')
     parser.add_argument('--wandb_watch_log', type=str, default=None, required=False,
                         choices=["gradients", "parameters", "all"],
                         help='Log gradients, parameters or both. Default None')
 
-    return parser.parse_args()
+    return parser_with_groups.parse_args()
 
 
 def get_config(args):
