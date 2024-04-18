@@ -45,6 +45,7 @@ class BaseModelModule(pl.LightningModule):
             parcel_loss=False,
             wandb_watch_log: str = None,
             active_sampling_relevancy_score: str = None,
+            eval_every_n_val_epoch: int = 1,
             **kwargs,
     ):
         """
@@ -73,6 +74,7 @@ class BaseModelModule(pl.LightningModule):
         self.accumulate_grad_batches = accumulate_grad_batches
         self.n_batches_per_block = n_batches_per_block
         self.gradient_clip_val = gradient_clip_val
+        self.eval_every_n_val_epoch = eval_every_n_val_epoch
         self.run_dir = Path(wandb.run.dir)
 
         self.monitor_metric = 'val/f1w_parcel' if self.parcel_loss else 'val/f1w'
@@ -153,6 +155,22 @@ class BaseModelModule(pl.LightningModule):
     def val_epoch(self):
         return self.current_epoch // self.trainer.check_val_every_n_epoch
 
+    def _should_eval_more(self):
+        """
+        Some metrics are expensive to compute and so we only compute them every n validation epochs.
+        """
+
+        if self.trainer.state.stage == "sanity_check":
+            # always run during the sanity check
+            return True
+
+        if self.eval_every_n_val_epoch == 0:
+            # only evaluate in the last epoch
+            return self.val_epoch == self.trainer.max_epochs // self.trainer.check_val_every_n_epoch - 1
+
+        # otherwise evaluate every n val_epochs
+        return self.val_epoch % self.eval_every_n_val_epoch == 0
+
     def setup(self, stage: str) -> None:
         wandb.run.summary["monitor_metric"] = self.monitor_metric
 
@@ -181,7 +199,6 @@ class BaseModelModule(pl.LightningModule):
         # Log gradients
         if stage == "fit":
             wandb.watch(self.model, log_freq=100, log=self.wandb_watch_log)
-
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
 
@@ -375,14 +392,15 @@ class BaseModelModule(pl.LightningModule):
         self.metric_crop5_f1w_parcel(output_cropped, labels_cropped)
         self.metric_crop5_f1ma_parcel(output_cropped, labels_cropped)
 
-        # Per-class metrics
-        self.metric_class_precision.update(output, labels)
-        self.metric_class_recall.update(output, labels)
-        self.metric_class_f1.update(output, labels)
+        if self._should_eval_more():
+            # Per-class metrics
+            self.metric_class_precision.update(output, labels)
+            self.metric_class_recall.update(output, labels)
+            self.metric_class_f1.update(output, labels)
 
-        # Per-patch metrics
-        self._collect_per_patch_scores(batch, output)
-        self._collect_preview_samples(batch, output)
+            # Per-patch metrics
+            self._collect_per_patch_scores(batch, output)
+            self._collect_preview_samples(batch, output)
 
         if not self.parcel_loss:
             self.log_dict({
@@ -462,34 +480,41 @@ class BaseModelModule(pl.LightningModule):
     def on_validation_epoch_end(self) -> None:
         confusion_matrix_cpu = self.confusion_matrix.compute().cpu()
         wandb_cm = self._get_wandb_confusion_matrix(confusion_matrix_cpu)
-        class_scores_df = self._compute_class_scores_table(confusion_matrix_cpu)
-        patch_scores_df = self._compute_per_patch_scores()
 
-        if self.trainer.state.stage != "sanity_check":
-            examples_table, images = self._get_preview_table_and_samples()
-            # Validation metrics will be logged only in on_train_epoch_end together with the training metrics
-            self.val_metrics = {
-                "val/loss_nll_parcel": self.loss_nll_val.compute().cpu().item(),
-                "val/acc_parcel": self.metric_acc_parcel.compute().cpu().item(),
-                "val/f1w_parcel": self.metric_f1w_parcel.compute().cpu().item(),
-                "val/f1ma_parcel": self.metric_f1ma_parcel.compute().cpu().item(),
-                "val/crop5_acc_parcel": self.metric_crop5_acc_parcel.compute().cpu().item(),
-                "val/crop5_f1w_parcel": self.metric_crop5_f1w_parcel.compute().cpu().item(),
-                "val/crop5_f1ma_parcel": self.metric_crop5_f1ma_parcel.compute().cpu().item(),
+        # Validation metrics will be logged only in on_train_epoch_end together with the training metrics
+        self.val_metrics = {
+            "val/loss_nll_parcel": self.loss_nll_val.compute().cpu().item(),
+            "val/acc_parcel": self.metric_acc_parcel.compute().cpu().item(),
+            "val/f1w_parcel": self.metric_f1w_parcel.compute().cpu().item(),
+            "val/f1ma_parcel": self.metric_f1ma_parcel.compute().cpu().item(),
+            "val/crop5_acc_parcel": self.metric_crop5_acc_parcel.compute().cpu().item(),
+            "val/crop5_f1w_parcel": self.metric_crop5_f1w_parcel.compute().cpu().item(),
+            "val/crop5_f1ma_parcel": self.metric_crop5_f1ma_parcel.compute().cpu().item(),
+            "confusion_matrix": wandb_cm,
+        }
+        if not self.parcel_loss:
+            self.val_metrics |= {
+                "val/acc": self.metric_acc.compute().cpu().item(),
+                "val/f1w": self.metric_f1w.compute().cpu().item(),
+                "val/f1ma": self.metric_f1ma.compute().cpu().item(),
+            }
 
-                "confusion_matrix": wandb_cm,
-                "examples": images,
-                "examples_table": examples_table,
+        if self._should_eval_more():
+            class_scores_df = self._compute_class_scores_table(confusion_matrix_cpu)
+            patch_scores_df = self._compute_per_patch_scores()
+            self.val_metrics |= {
                 "class_scores": wandb.Table(dataframe=class_scores_df),
                 "patch_scores": wandb.Table(dataframe=patch_scores_df),
             }
-            if not self.parcel_loss:
+
+            if self.trainer.state.stage != "sanity_check":
+                examples_table, images = self._get_preview_table_and_samples()
                 self.val_metrics |= {
-                    "val/acc": self.metric_acc.compute().cpu().item(),
-                    "val/f1w": self.metric_f1w.compute().cpu().item(),
-                    "val/f1ma": self.metric_f1ma.compute().cpu().item(),
+                    "examples": images,
+                    "examples_table": examples_table,
                 }
 
+        if self.trainer.state.stage != "sanity_check":
             self._update_learning_rate()
 
         self._reset_val_metrics()

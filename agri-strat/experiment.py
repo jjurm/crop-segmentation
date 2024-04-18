@@ -88,7 +88,7 @@ def parse_arguments():
 
     parser = parser_with_groups.add_argument_group('training')
     parser.add_argument('--num_epochs', type=int, default=10, required=False,
-                    help='Number of epochs. Also scaled by --block_size. Default 10')
+                        help='Number of epochs. Also scaled by --block_size. Default 10')
     parser.add_argument('--check_val_every_n_epoch', type=int, default=1, required=False,
                         help='Check validation every n epochs. Also scaled by --block_size. Default 1')
     parser.add_argument('--batch_size', type=int, default=4, required=False,
@@ -139,6 +139,10 @@ def parse_arguments():
     parser.add_argument('--wandb_watch_log', type=str, default=None, required=False,
                         choices=["gradients", "parameters", "all"],
                         help='Log gradients, parameters or both. Default None')
+    parser.add_argument('--eval_every_n_val_epoch', type=int, default=0, required=False,
+                        help='Evaluate the model with more stats every n val_epochs (per-class scores, per-patch '
+                             'scores, preview samples). Always evaluates at the end. Set to 0 to only compute these '
+                             'stats in the last val_epoch. Default 0')
 
     return parser_with_groups.parse_args()
 
@@ -181,6 +185,7 @@ def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataMod
         medians_metadata=datamodule.metadata,
         wandb_watch_log=config["wandb_watch_log"],
         active_sampling_relevancy_score=config["active_sampling_relevancy_score"],
+        eval_every_n_val_epoch=config["eval_every_n_val_epoch"],
     ) | kwargs
     if wandb.run.resumed:
         # Load the model from the latest checkpoint
