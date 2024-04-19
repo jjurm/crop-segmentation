@@ -51,6 +51,10 @@ def parse_arguments():
                         help='Fractions of samples to keep in each split, each argument in the form <split>=<fraction> '
                              'where <split> is such as train, val, test, and <fraction> is a float between 0 and 1. '
                              'If not specified for some split, all samples are kept.')
+    parser.add_argument('--drop_duplicates', type=str, nargs='+', default=None, required=False,
+                        help='Drop duplicate patches from the specified splits in the given order. E.g. when the given '
+                             'splits are ["test", "val"], first, all patches from "test" are removed that are also '
+                             'in any other split, then all patches from "val" are removed that are also in "train".')
     return parser.parse_args()
 
 
@@ -88,6 +92,16 @@ def create_artifact(
         patch_processor.log_to_artifact(split_df, artifact)
 
     wandb.run.log_artifact(artifact)
+
+
+def drop_duplicates(split_df, drop_duplicates_splits_order: list[str]):
+    for split in drop_duplicates_splits_order:
+        is_in_split = split_df["target"] == split
+        is_duplicated = split_df.index.duplicated(keep=False)
+        to_drop = is_in_split & is_duplicated
+        split_df = split_df[~to_drop]
+        print(f"Dropped {to_drop.sum()} duplicates from split {split}.")
+    return split_df
 
 
 def main():
@@ -139,6 +153,10 @@ def main():
             raise ValueError("Either split_rules_artifact or coco_path_prefix must be provided.")
         split_df.set_index("path", inplace=True)
 
+        # Drop duplicates (for COCO) if requested
+        if run.config["coco_prefix"] is not None and run.config["drop_duplicates"]:
+            split_df = drop_duplicates(split_df, run.config["drop_duplicates"])
+
         # Process each patch
         patch_preprocessors = [
             PatchFilenameAttrs(),
@@ -155,6 +173,10 @@ def main():
 
         # Now perform random splits
         random_splits(split_df, rules_to_split, split_rule_defs, seed=run.config["seed"])
+
+        # Drop duplicates if requested
+        if run.config["drop_duplicates"]:
+            split_df = drop_duplicates(split_df, run.config["drop_duplicates"])
 
         # Sample subsets if requested
         if split_fractions:
