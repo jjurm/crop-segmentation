@@ -131,9 +131,10 @@ def parse_arguments():
     parser.add_argument('--n_batches_per_block', type=int, default=1, required=False,
                         help='The number of batches (of effective batch_size) to sample in each active sampling '
                              'block. Controls the active sampling frequency. Default 1, i.e. sample every batch')
-    parser.add_argument('--active_sampling_relevancy_score', type=str, default="none", required=False,
+    parser.add_argument('--active_sampling_relevancy_score', type=str, nargs="+", default=["none"],
                         help='The relevancy score function to use for active sampling. Choices: ["none", "loss", '
-                             '"rho-loss-<irreducible_loss_model_artifact>"]. Default none')
+                             '"rho-loss-<irreducible_loss_model_artifact>", "uncertainty-margin"], or a list of '
+                             '"<float_weight>*<fn>". Default none')
 
     parser = parser_with_groups.add_argument_group('logging')
     parser.add_argument('--wandb_watch_log', type=str, default=None, required=False,

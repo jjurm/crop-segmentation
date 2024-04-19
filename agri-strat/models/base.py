@@ -41,7 +41,7 @@ class BaseModelModule(pl.LightningModule):
             gradient_clip_val: float | None,
             parcel_loss=False,
             wandb_watch_log: str = None,
-            active_sampling_relevancy_score: str = None,
+            active_sampling_relevancy_score: list[str] = None,
             eval_every_n_val_epoch: int = 1,
             **kwargs,
     ):
