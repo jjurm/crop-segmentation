@@ -47,6 +47,10 @@ def parse_arguments():
                         help='Prefix for the name of the artifact that will be logged.')
     parser.add_argument('--limit_patches', type=int, default=None, required=False,
                         help='Limit the number of patches to process, for debugging. Default: None.')
+    parser.add_argument('--subset_fractions', type=str, nargs='+', default=None, required=False,
+                        help='Fractions of samples to keep in each split, each argument in the form <split>=<fraction> '
+                             'where <split> is such as train, val, test, and <fraction> is a float between 0 and 1. '
+                             'If not specified for some split, all samples are kept.')
     return parser.parse_args()
 
 
@@ -102,6 +106,13 @@ def main():
         if run.config["split_rules_artifact"] is not None and run.config["coco_prefix"] is not None:
             raise ValueError("Only one of split_rules_artifact or coco_path_prefix can be provided.")
 
+        # Parse split fractions
+        split_fractions = {}
+        if run.config.subset_fractions is not None:
+            for arg in run.config.subset_fractions:
+                split, fraction = arg.split('=')
+                split_fractions[split] = float(fraction)
+
         netcdf_path = Path(run.config['netcdf_path'] or os.getenv("NETCDF_PATH", "dataset/netcdf"))
 
         # List all patches and split rules
@@ -144,6 +155,17 @@ def main():
 
         # Now perform random splits
         random_splits(split_df, rules_to_split, split_rule_defs, seed=run.config["seed"])
+
+        # Sample subsets if requested
+        if split_fractions:
+            split_df_subset = split_df.groupby("target")[split_df.columns].apply(
+                lambda df: df.sample(
+                    frac=split_fractions.get(df.name, 1),
+                    random_state=np.random.RandomState((run.config["seed"] + hash(split)) % 2 ** 32)
+                )
+            ).reset_index(level=0, drop=True)
+            # Keep samples in the original order
+            split_df = split_df_subset.reindex(index=split_df.index.intersection(split_df_subset.index))
 
         # Process each patch again
         patch_postprocessors = [
