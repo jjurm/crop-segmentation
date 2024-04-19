@@ -179,13 +179,14 @@ def create_datamodule(config, label_encoder, calculated_batch_size, accumulate_g
 
 
 def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataModule, **kwargs):
+    a_s_relevancy_score = spec if isinstance((spec := config["active_sampling_relevancy_score"]), list) else [spec]
     unsaved_params = dict(
         label_encoder=label_encoder,
         bands=datamodule.get_bands(),
         num_time_steps=config["bins_range"][1] - config["bins_range"][0] + 1,
         medians_metadata=datamodule.metadata,
         wandb_watch_log=config["wandb_watch_log"],
-        active_sampling_relevancy_score=config["active_sampling_relevancy_score"],
+        active_sampling_relevancy_score=a_s_relevancy_score,
         eval_every_n_val_epoch=config["eval_every_n_val_epoch"],
     ) | kwargs
     if wandb.run.resumed:
