@@ -10,6 +10,7 @@ from torchdata.datapipes.iter import IterableWrapper
 
 from utils.active_sampling.relevance_score.loss_score_fn import RHOLossScoreFn, LossScoreFn
 from utils.active_sampling.relevance_score.score_fn import ScoreFn
+from utils.active_sampling.relevance_score.uncertainty_margin import UncertaintyMarginScoreFn
 from utils.class_weights import ClassWeights
 
 
@@ -48,17 +49,19 @@ def get_active_sampling_relevancy_score_fn(
 ) -> Optional[ScoreFn]:
     if active_sampling_relevancy_score is None or active_sampling_relevancy_score == "none":
         return None
+    elif active_sampling_relevancy_score == "loss":
+        return LossScoreFn(
+            loss_fn=nn.NLLLoss(weight=class_weights.class_weights_weighted, reduction="none"),
+            ignore_index=0 if parcel_loss else None,
+        )
     elif active_sampling_relevancy_score.startswith("rho-loss-"):
         return RHOLossScoreFn(
             loss_fn=nn.NLLLoss(weight=class_weights.class_weights_weighted, reduction="none"),
             ignore_index=0 if parcel_loss else None,
             irreducible_loss_model_artifact=active_sampling_relevancy_score.removeprefix("rho-loss-"),
         )
-    elif active_sampling_relevancy_score == "loss":
-        return LossScoreFn(
-            loss_fn=nn.NLLLoss(weight=class_weights.class_weights_weighted, reduction="none"),
-            ignore_index=0 if parcel_loss else None,
-        )
+    elif active_sampling_relevancy_score == "uncertainty-margin":
+        return UncertaintyMarginScoreFn()
     else:
         raise ValueError(f"Unsupported active_sampling_relevancy_score: {active_sampling_relevancy_score}")
 
