@@ -9,6 +9,7 @@ from torch.utils.data.datapipes.iter.grouping import UnBatcherIterDataPipe
 from torchdata.datapipes.iter import IterableWrapper
 
 from utils.active_sampling.relevance_score.loss_score_fn import RHOLossScoreFn, LossScoreFn
+from utils.active_sampling.relevance_score.random import RandomScoreFn
 from utils.active_sampling.relevance_score.score_fn import ScoreFn, WeightedScoreFn
 from utils.active_sampling.relevance_score.uncertainty_margin import UncertaintyMarginScoreFn
 from utils.class_weights import ClassWeights
@@ -53,7 +54,9 @@ def _get_single_active_sampling_relevancy_score_fn(
     else:
         weight = 1.0
 
-    if active_sampling_relevancy_score == "loss":
+    if active_sampling_relevancy_score == "random":
+        fn = RandomScoreFn(seed=np.random.randint(0, 2 ** 32))  # seed_everything called in main
+    elif active_sampling_relevancy_score == "loss":
         fn = LossScoreFn(
             loss_fn=nn.NLLLoss(weight=class_weights.class_weights_weighted, reduction="none"),
             ignore_index=0 if parcel_loss else None,
@@ -76,8 +79,7 @@ def _get_single_active_sampling_relevancy_score_fn(
 
 def get_active_sampling_relevancy_score_fn(
         active_sampling_relevancy_score: list[str],
-        class_weights: ClassWeights,
-        parcel_loss: bool,
+        **kwargs,
 ) -> Optional[ScoreFn]:
     # No active sampling
     if active_sampling_relevancy_score is None:
@@ -94,7 +96,7 @@ def get_active_sampling_relevancy_score_fn(
 
     # Multiple active sampling functions
     weights_fns = [
-        _get_single_active_sampling_relevancy_score_fn(fn, class_weights, parcel_loss)
+        _get_single_active_sampling_relevancy_score_fn(fn, **kwargs)
         for fn in filtered_fns
     ]
     weights = torch.tensor([weight for weight, _ in weights_fns])
