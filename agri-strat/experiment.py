@@ -189,17 +189,6 @@ def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataMod
         active_sampling_relevancy_score=a_s_relevancy_score,
         eval_every_n_val_epoch=config["eval_every_n_val_epoch"],
     ) | kwargs
-    if wandb.run.resumed:
-        # Load the model from the latest checkpoint
-        checkpoint_path = Path(wandb.run.dir) / "checkpoints" / "last.ckpt"
-        if checkpoint_path.exists():
-            print(f"Resuming model, loading from checkpoint {checkpoint_path}")
-            return BaseModelModule.load_from_checkpoint(
-                checkpoint_path=checkpoint_path,
-                **unsaved_params,
-            )
-        else:
-            print("Resuming a wandb run, but no checkpoint found. Creating a new model.")
 
     # Create a new model
     return BaseModelModule(
@@ -281,7 +270,7 @@ def main():
         logger = CustomWandbLogger(
             experiment=run,
             log_model='all',
-            checkpoint_name=f"model-{run.name}"
+            checkpoint_name=f"model-{run.name}",
         )
 
         trainer = pl.Trainer(
@@ -307,8 +296,19 @@ def main():
             log_every_n_steps=20,
         )
 
+        ckpt_path = None
+        if run.resumed:
+            ckpt = wandb.run.restore(name="checkpoints/last.ckpt")
+            if ckpt is not None:
+                ckpt_path = ckpt.name
+                loaded = torch.load(ckpt_path, map_location="cpu")
+                print(f"Resuming run {run.name}, training will resume from checkpoint (epoch={loaded['epoch']}, "
+                      f"global_step={loaded['global_step']}).")
+            else:
+                print(f"Resuming run {run.name}, but no checkpoint found. Training will start from scratch.")
+
         print("Training...")
-        trainer.fit(model, datamodule=datamodule)
+        trainer.fit(model, datamodule=datamodule, ckpt_path=ckpt_path)
 
 
 if __name__ == '__main__':
