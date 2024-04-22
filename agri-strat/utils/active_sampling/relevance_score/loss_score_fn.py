@@ -45,7 +45,11 @@ class LossScoreFn(AbstractLossScoreFn):
         return self.loss_fn(model_output, labels)
 
 
-class RHOLossScoreFn(LossScoreFn):
+class IHOLossScoreFn(LossScoreFn):
+    """
+    Calculates the Irreducible Holdout Loss part of the RHO-Loss score function from https://arxiv.org/abs/2206.07137.
+    """
+
     def __init__(
             self,
             loss_fn: nn.Module,
@@ -54,33 +58,26 @@ class RHOLossScoreFn(LossScoreFn):
     ):
         super().__init__(loss_fn, ignore_index)
 
-        self.il_model = None
-        if irreducible_loss_model_artifact is not None:
-            model_artifact = wandb.run.use_artifact(irreducible_loss_model_artifact, type="model")
-            model_ckpt = torch.load(model_artifact.file())
-            state_dict = {
-                k.removeprefix("model."): v
-                for k, v in model_ckpt["state_dict"].items()
-                if k.startswith("model.")
-            }
-            il_model_class = get_model_class(model_ckpt["hyper_parameters"]["model"])
-            il_model = il_model_class(**model_ckpt["hyper_parameters"]["model_kwargs"])
-            il_model.load_state_dict(state_dict)
+        assert irreducible_loss_model_artifact is not None
+        model_artifact = wandb.run.use_artifact(irreducible_loss_model_artifact, type="model")
+        model_ckpt = torch.load(model_artifact.file())
+        state_dict = {
+            k.removeprefix("model."): v
+            for k, v in model_ckpt["state_dict"].items()
+            if k.startswith("model.")
+        }
+        il_model_class = get_model_class(model_ckpt["hyper_parameters"]["model"])
+        il_model = il_model_class(**model_ckpt["hyper_parameters"]["model_kwargs"])
+        il_model.load_state_dict(state_dict)
 
-            for param in il_model.parameters():
-                param.requires_grad = False
+        for param in il_model.parameters():
+            param.requires_grad = False
 
-            il_model.eval()
+        il_model.eval()
 
-            print(f"loaded IL model from artifact: {irreducible_loss_model_artifact}")
-            self.il_model = il_model
+        print(f"loaded IL model from artifact: {irreducible_loss_model_artifact}")
+        self.il_model = il_model
 
     def _score(self, inputs, labels, model) -> torch.Tensor:
-        loss = super()._score(inputs, labels, model)
-
-        if self.il_model is not None:
-            il_output = self.il_model(inputs)
-            il_loss = self.loss_fn(il_output, labels)
-            loss = loss - il_loss
-
-        return loss
+        il_output = self.il_model(inputs)
+        return self.loss_fn(il_output, labels)
