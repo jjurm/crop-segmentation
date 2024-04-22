@@ -211,7 +211,6 @@ def main():
             tags=args.tags,
             resume="allow",
             config=get_config(args),
-            settings=wandb.Settings(job_name="train1"),
     ) as run:
         run.summary["node_name"] = os.environ.get('NODE_NAME', None)
 
