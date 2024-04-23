@@ -3,6 +3,8 @@
 __author__ = "Juraj Micko"
 __license__ = "MIT License"
 
+from utils.callbacks.custom_model_checkpoint import CustomModelCheckpoint
+
 if __name__ == '__main__':
     print("Importing modules...")
 
@@ -13,7 +15,6 @@ from pathlib import Path
 import lightning.pytorch as pl
 import torch
 from lightning import seed_everything
-from lightning.pytorch.callbacks import ModelCheckpoint
 from math import ceil
 
 import wandb
@@ -240,6 +241,19 @@ def main():
                                      parcel_loss=run.config["parcel_loss"], weighted_loss=run.config["weighted_loss"],
                                      class_weights_weight=run.config["class_weights_weight"])
 
+        checkpoint_name = f"model-{run.name}"
+        ckpt_path = None
+        if run.resumed:
+            if "epoch" in run.summary.keys():
+                ckpt_artifact = wandb.run.use_artifact("{checkpoint_name}:epoch={epoch:02d}".format(
+                    checkpoint_name=checkpoint_name,
+                    epoch=run.summary["epoch"],
+                ))
+                ckpt_path = ckpt_artifact.file()
+                print(f"Resuming run {run.name}, loaded a checkpoint from epoch={run.summary['epoch']}.")
+            else:
+                print(f"Resumed run {run.name} is empty, starting all from scratch.")
+
         model = create_model(
             config=run.config,
             label_encoder=label_encoder,
@@ -252,14 +266,24 @@ def main():
         )
 
         callbacks = [
-            BatchCounterCallback(datamodule),
+            BatchCounterCallback(
+                datamodule,
+                # The following scenario is not supported:
+                # - each epoch has different order of patches
+                # - skip_empty_subpatches is True
+                # - limit_train_batches is set
+                # In that case, the second epoch might have more batches than the first one,
+                # resulting in no batch being is_last_batch. Problem is avoided by not setting the number of batches
+                # in the trainer.
+                set_trainer_max_batches=not (run.config["skip_empty_subpatches"] and run.config["limit_train_batches"]),
+            ),
             ExceptionTrackerCallback(),
             CustomLearningRateMonitor(),
-            ModelCheckpoint(
+            CustomModelCheckpoint(
                 dirpath=Path(wandb.run.dir) / "checkpoints",
                 filename='ckpt_epoch={epoch:02d}',
                 monitor=model.monitor_metric,
-                save_last=True,
+                save_last=False,
                 save_top_k=-1,
                 mode='max',
                 auto_insert_metric_name=False,
@@ -269,7 +293,7 @@ def main():
         logger = CustomWandbLogger(
             experiment=run,
             log_model='all',
-            checkpoint_name=f"model-{run.name}",
+            checkpoint_name=checkpoint_name,
         )
 
         trainer = pl.Trainer(
@@ -281,8 +305,6 @@ def main():
             precision='32-true',
             callbacks=callbacks,
             logger=logger,
-            # For ensuring determinism with nll_loss2d_forward_out_cuda_template,
-            # see https://discuss.pytorch.org/t/pytorchs-non-deterministic-cross-entropy-loss-and-the-problem-of-reproducibility/172180/9
             deterministic="warn" if run.config["deterministic"] else None,
             benchmark=not run.config["deterministic"],
             fast_dev_run=run.config["devtest"],
@@ -294,17 +316,6 @@ def main():
             # profiler="simple",
             log_every_n_steps=20,
         )
-
-        ckpt_path = None
-        if run.resumed:
-            ckpt = wandb.run.restore(name="checkpoints/last.ckpt")
-            if ckpt is not None:
-                ckpt_path = ckpt.name
-                loaded = torch.load(ckpt_path, map_location="cpu")
-                print(f"Resuming run {run.name}, training will resume from checkpoint (epoch={loaded['epoch']}, "
-                      f"global_step={loaded['global_step']}).")
-            else:
-                print(f"Resuming run {run.name}, but no checkpoint found. Training will start from scratch.")
 
         print("Training...")
         trainer.fit(model, datamodule=datamodule, ckpt_path=ckpt_path)

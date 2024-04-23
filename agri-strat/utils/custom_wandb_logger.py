@@ -42,11 +42,14 @@ class CustomWandbLogger(WandbLogger):
         super().after_save_checkpoint(checkpoint_callback)
 
         # Clean up previous artifacts.
+        self._clean_up_unaliased_artifacts()
+
+    def _clean_up_unaliased_artifacts(self):
         # Adapted from https://gitbook-docs.wandb.ai/guides/artifacts/api#cleaning-up-unused-versions
         for version in self._custom_wandb_api.artifacts("model", self._checkpoint_name):
             # Clean up all versions that don't have an alias such as 'latest'.
-            if len(version.aliases) == 0:
-                version.delete()
+            if len({"latest", "best"}.intersection(version.aliases)) == 0:
+                version.delete(delete_aliases=True)
 
     def _scan_and_log_checkpoints(self, checkpoint_callback: ModelCheckpoint) -> None:
         """
@@ -55,6 +58,7 @@ class CustomWandbLogger(WandbLogger):
 
         # get checkpoints to be saved with associated score
         checkpoints = _scan_checkpoints(checkpoint_callback, self._logged_model_time)
+        assert len(checkpoints) <= 1, "Logging multiple checkpoints at once is unexpected"
 
         # log iteratively all new checkpoints
         for t, p, s, tag in checkpoints:
@@ -79,7 +83,12 @@ class CustomWandbLogger(WandbLogger):
                 self._checkpoint_name = f"model-{self.experiment.id}"
             artifact = wandb.Artifact(name=self._checkpoint_name, type="model", metadata=metadata)
             artifact.add_file(p, name="model.ckpt")
-            aliases = ["latest", "best"] if p == checkpoint_callback.best_model_path else ["latest"]
+            aliases = [
+                "latest",
+                "epoch={epoch:02d}".format(epoch=self.experiment.summary['epoch']),
+            ]
+            if p == checkpoint_callback.best_model_path:
+                aliases.append("best")
             self.experiment.log_artifact(artifact, aliases=aliases)
 
             # The added line to wait for the artifact upload (before artifacts are accessed)

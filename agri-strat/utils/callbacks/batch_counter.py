@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Dict
 
 import lightning as pl
 import wandb
@@ -16,8 +16,25 @@ class BatchCounterCallback(pl.Callback):
     an upper bound of the true number. In the following epochs it uses the number of batches counted previously.
     """
 
-    def __init__(self, datamodule: MediansDataModule):
+    def on_save_checkpoint(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", checkpoint: Dict[str, Any]
+    ) -> None:
+        checkpoint["trainer/true_batch_count"] = self.train_true_batch_count
+        checkpoint["trainer/true_batch_count_val"] = self.val_true_batch_count
+        checkpoint["trainer/true_batch_count_test"] = self.test_true_batch_count
+
+    def on_load_checkpoint(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule",
+                           checkpoint: Dict[str, Any]) -> None:
+        if "trainer/true_batch_count" in checkpoint:
+            self.train_true_batch_count = checkpoint["trainer/true_batch_count"]
+        if "trainer/true_batch_count_val" in checkpoint:
+            self.val_true_batch_count = checkpoint["trainer/true_batch_count_val"]
+        if "trainer/true_batch_count_test" in checkpoint:
+            self.test_true_batch_count = checkpoint["trainer/true_batch_count_test"]
+
+    def __init__(self, datamodule: MediansDataModule, set_trainer_max_batches: bool):
         self.datamodule = datamodule
+        self.set_trainer_max_batches = set_trainer_max_batches
 
         self.train_batch_counter = None
         self.train_true_batch_count = None
@@ -40,17 +57,20 @@ class BatchCounterCallback(pl.Callback):
 
     def on_train_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self.train_batch_counter = 0
-        self._train_set_guessed_num_batches(trainer)
+        if self.set_trainer_max_batches:
+            self._train_set_guessed_num_batches(trainer)
 
     def on_validation_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         if trainer.sanity_checking:
             return
         self.val_batch_counter = 0
-        self._val_set_guessed_num_batches(trainer)
+        if self.set_trainer_max_batches:
+            self._val_set_guessed_num_batches(trainer)
 
     def on_test_epoch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self.test_batch_counter = 0
-        self._test_set_guessed_num_batches(trainer)
+        if self.set_trainer_max_batches:
+            self._test_set_guessed_num_batches(trainer)
 
     def on_train_batch_start(
             self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int
