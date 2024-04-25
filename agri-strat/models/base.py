@@ -497,14 +497,14 @@ class BaseModelModule(pl.LightningModule):
                 "patch_scores": wandb.Table(dataframe=patch_scores_df),
             }
 
-            if self.trainer.state.stage != "sanity_check":
+            if not self.trainer.sanity_checking:
                 examples_table, images = self._get_preview_table_and_samples()
                 self.val_metrics |= {
                     "examples": images,
                     "examples_table": examples_table,
                 }
 
-        if self.trainer.state.stage != "sanity_check":
+        if not self.trainer.sanity_checking:
             self._update_learning_rate()
 
         self._reset_val_metrics()
