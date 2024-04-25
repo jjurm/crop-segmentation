@@ -197,16 +197,16 @@ class BaseModelModule(pl.LightningModule):
             lr_scheduler = ReduceLROnPlateau(
                 optimizer,
                 mode="max",
-                threshold=1e-3,
+                threshold=3e-3,
                 threshold_mode="rel",
                 factor=0.5,
-                patience=4,
+                patience=1,
             )
         elif self.hparams.get("model") == "convstar":
             lr_scheduler = StepLR(
                 optimizer,
                 step_size=30,
-                gamma=0.1
+                gamma=0.1,
             )
         else:
             raise ValueError(f"model = {self.hparams.get('model')}, expected: 'unet' or 'convstar'")
