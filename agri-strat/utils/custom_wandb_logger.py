@@ -34,8 +34,9 @@ class CustomWandbLogger(WandbLogger):
             metrics_dict = metrics
         self.aggregated_metrics.update(metrics_dict)
 
-    def log_now(self):
-        self.experiment.log(self.aggregated_metrics)
+    def log_now(self, dry_run: bool):
+        if not dry_run:
+            self.experiment.log(self.aggregated_metrics)
         self.aggregated_metrics = {}
 
     def after_save_checkpoint(self, checkpoint_callback: ModelCheckpoint) -> None:

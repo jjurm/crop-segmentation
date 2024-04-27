@@ -246,7 +246,7 @@ class BaseModelModule(pl.LightningModule):
     def on_train_start(self) -> None:
         # Log a table of class weights to Wandb
         self.logger.log_metrics({"class_weights": self.class_weights.get_wandb_table()})
-        self.logger.log_now()
+        self.logger.log_now(dry_run=self.trainer.sanity_checking)
 
         if not self.parcel_loss:
             raise NotImplementedError("parcel_loss=False is not implemented")
@@ -299,7 +299,7 @@ class BaseModelModule(pl.LightningModule):
                 self.logger.log_metrics(self._get_trainer_metrics() | {
                     "train/loss_nll_parcel_step": batch_loss,
                 })
-                self.logger.log_now()
+                self.logger.log_now(dry_run=self.trainer.sanity_checking)
 
     def _process_minibatch(self, mini_batch):
         output = self.model(mini_batch['medians'])
@@ -343,7 +343,7 @@ class BaseModelModule(pl.LightningModule):
             | {
                 "train/loss_nll_parcel_epoch": loss_nll_epoch,
             })
-        self.logger.log_now()
+        self.logger.log_now(dry_run=self.trainer.sanity_checking)
         self.val_metrics = {}
 
     def on_validation_epoch_start(self) -> None:
