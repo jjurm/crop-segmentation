@@ -5,27 +5,11 @@ metadata:
   namespace: runai-studentmichele-juraj
 spec:
   cpu:
-    value: "32"
+    value: "8"
   preemptible:
     value: true
   image:
     value: jjurm/runai-python-job
-  exposedUrls:
-    items:
-      exposed-url-0:
-        value:
-          containerPort: 8888
-          customUrl: false
-          url: ""
-  ports:
-    items:
-      port-8888:
-        value:
-          autoGenerate: false
-          container: 8888
-          external: 8888
-          protocol: "TCP"
-          serviceType: "ClusterIP"
   name:
     value: *name
   nodeType:
@@ -34,3 +18,9 @@ spec:
     value: jmicko@student.ethz.ch
   workingDir:
     value: /mydata/studentmichele/juraj
+  environment:
+    items:
+      HOME:
+        value: /workdir
+      ENV_FILE:
+        value: /myhome/.env
