@@ -84,7 +84,21 @@ python experiment.py \
 run docker image on kp machine for debugging
 
 ```bash
-sudo docker run -it --rm --gpus all --env-file /home/jmicko/.env --shm-size=24gb --mount src=/home/jmicko/thesis-python/agri-strat,target=/workdir/agri-strat,type=bind --mount src=/home/jmicko/thesis-python/agri-strat/dataset/dem,target=/workdir/dataset/dem,type=bind --hostname $(hostname)-debug --env NODE_NAME=$(hostname)-debug jjurm/runai-python-job bash
+sudo docker run \
+  -it --rm \
+  --gpus all \
+  --shm-size=24gb \
+  --mount src=/home/jmicko/thesis-python/agri-strat/dataset,target=/workdir/dataset,type=bind \
+  --mount src=/home/jmicko/thesis-python,target=/workdir/thesis-python,type=bind \
+  --mount src=/home/jmicko/.config/wandb,target=/workdir/.config/wandb,type=bind \
+  --mount src=/home/jmicko/.env,target=/workdir/.env,type=bind \
+  --mount src=/home/jmicko/env.sh,target=/workdir/env.sh,type=bind \
+  --hostname $(hostname)-debug \
+  --env NODE_NAME=$(hostname)-debug \
+  --env ENV_FILE=/workdir/.env \
+  -p 2022:22 \
+  jjurm/runai-python-job \
+  wandb launch-agent
 ```
 
 
@@ -97,8 +111,9 @@ wandb.Api().create_run_queue(name="mixed", type="local-process", prioritization_
 ```
 
 start an agent
+
+kp machine:
 ```bash
-# kp machine
 sudo docker run \
   -it --rm \
   --gpus all \
@@ -108,22 +123,41 @@ sudo docker run \
   --mount src=/home/jmicko/.config/wandb,target=/workdir/.config/wandb,type=bind \
   --hostname $(hostname)-docker \
   --env NODE_NAME=$(hostname)-docker \
+  -p 2022:22 \
   jjurm/runai-python-job \
   wandb launch-agent
+```
 
-# on runai
+on runai:
+```bash
 runai submit \
   --image jjurm/runai-python-job \
   --working-dir /workdir \
   --cpu 4 \
-  --gpu 0.2 \
+  --memory 18G \
+  --node-type "A100" \
+  --gpu 0.1 \
   --large-shm \
   -e HOME=/workdir \
   -e ENV_FILE=/myhome/.env \
   --backoff-limit 0 \
   --preemptible \
-  --name wla1 \
+  --name wla3 \
   -- wandb launch-agent -c /myhome/.config/wandb/launch-config.yaml
+```
+scheduler
+```bash
+runai submit \
+  --image jjurm/runai-python-job \
+  --working-dir /workdir \
+  --cpu 1 \
+  --node-type "CPU" \
+  -e HOME=/workdir \
+  -e ENV_FILE=/myhome/.env \
+  --backoff-limit 0 \
+  --preemptible \
+  --name sched \
+  -- wandb launch-agent -c /myhome/.config/wandb/launch-config-scheduler.yaml
 ```
 
 create a job
@@ -150,7 +184,7 @@ epochs: 40
 ## Sweep
 
 ```bash
-wandb launch-sweep wandb_jobs/sweep1.yaml --queue mixed --entity jjurm --project agri-strat
+wandb launch-sweep wandb_jobs/sweep2.yaml --queue kp --entity jjurm --project agri-strat
 ```
 
 
