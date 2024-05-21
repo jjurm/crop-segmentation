@@ -57,7 +57,7 @@ upload label_encoder artifact
 wandb artifact put \
   --type label_encoder \
   --name s4a_labels \
-  agri-strat/dataset/label_encoder/s4a_labels.yaml
+  agri_strat/dataset/label_encoder/s4a_labels.yaml
 ```
 
 training experiment
@@ -88,7 +88,7 @@ sudo docker run \
   -it --rm \
   --gpus all \
   --shm-size=24gb \
-  --mount src=/home/jmicko/thesis-python/agri-strat/dataset,target=/workdir/dataset,type=bind \
+  --mount src=/home/jmicko/thesis-python/agri_strat/dataset,target=/workdir/dataset,type=bind \
   --mount src=/home/jmicko/thesis-python,target=/workdir/thesis-python,type=bind \
   --mount src=/home/jmicko/.config/wandb,target=/workdir/.config/wandb,type=bind \
   --mount src=/home/jmicko/.env,target=/workdir/.env,type=bind \
@@ -119,7 +119,7 @@ sudo docker run \
   --gpus all \
   --env-file /home/jmicko/.env \
   --shm-size=24gb \
-  --mount src=/home/jmicko/thesis-python/agri-strat/dataset,target=/workdir/dataset,type=bind \
+  --mount src=/home/jmicko/thesis-python/agri_strat/dataset,target=/workdir/dataset,type=bind \
   --mount src=/home/jmicko/.config/wandb,target=/workdir/.config/wandb,type=bind \
   --hostname $(hostname)-docker \
   --env NODE_NAME=$(hostname)-docker \
@@ -162,10 +162,10 @@ runai submit \
 
 create a job
 ```bash
-wandb job create -p agri-strat -e jjurm --name split_data --entry-point agri-strat/split_data.py --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
+wandb job create -p agri-strat -e jjurm --name split_data --entry-point agri_strat/split_data.py --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
 ```
 ```bash
-wandb job create -p agri-strat -e jjurm --name experiment --entry-point agri-strat/experiment.py --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
+wandb job create -p agri-strat -e jjurm --name experiment --entry-point agri_strat/experiment.py --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
 ```
 
 launch the job

@@ -193,7 +193,7 @@ def main():
                         "--image",
                         "jjurm/runai-job",
                         "--working-dir",
-                        "/mydata/studentmichele/juraj/thesis-python/agri-strat",
+                        "/mydata/studentmichele/juraj/thesis-python/agri_strat",
                         "--backoff-limit",
                         "0",
                     ] + PRESETS[args.preset] + (

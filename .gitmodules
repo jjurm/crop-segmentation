@@ -1,3 +1,3 @@
-[submodule "agri-strat/dataset/shapes/sentinel-2"]
-	path = agri-strat/dataset/shapes/sentinel-2
+[submodule "agri_strat/dataset/shapes/sentinel-2"]
+	path = agri_strat/dataset/shapes/sentinel-2
 	url = https://github.com/justinelliotmeyers/Sentinel-2-Shapefile-Index

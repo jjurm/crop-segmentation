@@ -7,11 +7,11 @@
       <sourceFolder url="file://$MODULE_DIR$/dataset" type="java-resource" />
       <sourceFolder url="file://$MODULE_DIR$/schema" type="java-resource" />
       <sourceFolder url="file://$MODULE_DIR$/wandb" type="java-resource" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv310" />
       <excludeFolder url="file://$MODULE_DIR$/agri-strat/.venv310" />
       <excludeFolder url="file://$MODULE_DIR$/artifacts" />
-      <excludeFolder url="file://$MODULE_DIR$/.venv310" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.10 (agri-strat)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.10 (agri_strat)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>
