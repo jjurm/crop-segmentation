@@ -31,3 +31,6 @@ rasterstats
 pyproj
 swifter
 torchdata
+pyshp
+contextily
+tol-colors
