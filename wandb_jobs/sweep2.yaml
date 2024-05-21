@@ -1,0 +1,73 @@
+job: 'jjurm/agri-strat/experiment:sweep'
+method: grid
+name: active-sampling-d-more-iho-weights
+metric:
+  goal: maximize
+  name: val/f1w_parcel.max
+parameters:
+  seed:
+    values:
+      - 0
+      - 1
+      - 2
+  model:
+    value: "unet"
+  parcel_loss:
+    value: true
+  weighted_loss:
+    value: true
+  class_weights_weight:
+    value: 0.1
+  medians_artifact:
+    value: "1MS_B02B03B04B08_61x61:latest"
+  split_artifact:
+    value: exp1_patches5000_strat_2of3_coco_split:latest
+  bins_range:
+    value: [4, 9]
+  num_epochs:
+    value: 6
+  batch_size:
+    values:
+      #- 256
+      - 128
+  physical_batch_size:
+    value: 64
+  learning_rate:
+    values:
+      - 0.0002
+  requires_norm:
+    value: true
+  num_workers:
+    value: 8
+  deterministic:
+    value: true
+  shuffle_buffer_num_patches:
+    value: 500
+  skip_empty_subpatches:
+    value: true
+  shuffle_subpatches_within_patch:
+    value: false
+  label_encoder_artifact:
+    value: "s4a_labels:latest"
+  block_size:
+    value: 2.0
+  n_batches_per_block:
+    values:
+      - 1
+  active_sampling_relevancy_score:
+    values:
+      - "random"
+      - - "loss"
+        - "-1.0*iho-loss-model-brisk-lion-807:best"
+      - - "loss"
+        - "-1.4*iho-loss-model-brisk-lion-807:best"
+      - - "loss"
+        - "-2.8*iho-loss-model-brisk-lion-807:best"
+      - - "loss"
+        - "0.5*iho-loss-model-brisk-lion-807:best"
+      - - "loss"
+        - "1*iho-loss-model-brisk-lion-807:best"
+      - - "-1*loss"
+        - "1*iho-loss-model-brisk-lion-807:best"
+scheduler:
+  num_workers: 6

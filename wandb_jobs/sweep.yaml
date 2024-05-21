@@ -1,6 +1,6 @@
-job: 'jjurm/agri-strat/experiment:sweep2'
+job: 'jjurm/agri-strat/experiment:latest'
 method: grid
-name: sweep2
+name: active-sampling-1
 metric:
   goal: maximize
   name: val/f1w_parcel.max
@@ -9,6 +9,7 @@ parameters:
     values:
       - 0
       - 1
+      - 2
   model:
     value: "unet"
   parcel_loss:
@@ -16,11 +17,7 @@ parameters:
   weighted_loss:
     value: true
   class_weights_weight:
-    values:
-      - 0.0
-      - 0.1
-      - 0.2
-      - 0.4
+    value: 0.1
   medians_artifact:
     value: "1MS_B02B03B04B08_61x61:latest"
   split_artifact:
@@ -31,13 +28,14 @@ parameters:
     value: 8
   batch_size:
     values:
-      - 64
-      - 128
       - 256
+      - 128
+  physical_batch_size:
+    value: 64
   learning_rate:
     values:
-      - 1e-1
-      - 1e-2
+      - 0.01
+      - 0.003
   requires_norm:
     value: true
   num_workers:
@@ -48,7 +46,13 @@ parameters:
     value: 500
   skip_empty_subpatches:
     value: true
+  shuffle_subpatches_within_patch:
+    value: false
   label_encoder_artifact:
     value: "s4a_labels:latest"
+  irreducible_loss_model_artifact:
+    values:
+      - ~
+      - "model-good-surf-412:latest"
 scheduler:
-  num_workers: 5
+  num_workers: 2
