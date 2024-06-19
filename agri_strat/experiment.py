@@ -35,8 +35,8 @@ def parse_arguments():
 
     parser = parser_with_groups.add_argument_group('job')
     parser.add_argument('--job_type', type=str, default="train", required=False,
-                        choices=['train', 'val'],
-                        help='Type of job to perform. One of [\'train\', \'val\']')
+                        choices=['train', 'val', 'test'],
+                        help='Type of job to perform. One of [\'train\', \'val\', \'test\']')
     parser.add_argument('--tags', nargs="+", default=None, required=False,
                         help='Tags stored with the wandb job.')
     parser.add_argument('--notes', type=str, default=None, required=False,
@@ -77,6 +77,9 @@ def parse_arguments():
                         help='Model to use. One of [\'unet\', \'convstar\']')
     parser.add_argument("--num_layers", type=int, default=3, required=False,
                         help="Number of layers in the model. Default 3.")
+    parser.add_argument("--load_model", type=str, default=None, required=False,
+                        help="Name of the artifact to load the model from, used for job_type: val or test. Default "
+                             "None.")
 
     parser = parser_with_groups.add_argument_group('loss')
     parser.add_argument('--parcel_loss', action='store_true', default=False, required=False,
@@ -179,6 +182,26 @@ def create_datamodule(config, label_encoder, calculated_batch_size, accumulate_g
     return datamodule
 
 
+def get_ckpt_path(run, checkpoint_name):
+    ckpt_path = None
+    if run.resumed:
+        if "epoch" in run.summary.keys():
+            ckpt_artifact = wandb.run.use_artifact("{checkpoint_name}:epoch={epoch:02d}".format(
+                checkpoint_name=checkpoint_name,
+                epoch=run.summary["epoch"],
+            ))
+            ckpt_path = ckpt_artifact.file()
+            print(f"Resuming run {run.name}, loaded a checkpoint from epoch={run.summary['epoch']}.")
+        else:
+            print(f"Resumed run {run.name} is empty, starting all from scratch.")
+    if ckpt_path is None:
+        if run.config["load_model"]:
+            ckpt_artifact = wandb.run.use_artifact(run.config["load_model"], type="model")
+            ckpt_path = ckpt_artifact.file()
+            print(f"Loaded model from artifact {run.config['load_model']}.")
+    return ckpt_path
+
+
 def create_model(config, label_encoder: LabelEncoder, datamodule: MediansDataModule, **kwargs):
     a_s_relevancy_score = spec if isinstance((spec := config["active_sampling_relevancy_score"]), list) else [spec]
     unsaved_params = dict(
@@ -242,18 +265,7 @@ def main():
                                      class_weights_weight=run.config["class_weights_weight"])
 
         checkpoint_name = f"model-{run.name}"
-        ckpt_path = None
-        if run.resumed:
-            if "epoch" in run.summary.keys():
-                ckpt_artifact = wandb.run.use_artifact("{checkpoint_name}:epoch={epoch:02d}".format(
-                    checkpoint_name=checkpoint_name,
-                    epoch=run.summary["epoch"],
-                ))
-                ckpt_path = ckpt_artifact.file()
-                print(f"Resuming run {run.name}, loaded a checkpoint from epoch={run.summary['epoch']}.")
-            else:
-                print(f"Resumed run {run.name} is empty, starting all from scratch.")
-
+        ckpt_path = get_ckpt_path(run, checkpoint_name)
         model = create_model(
             config=run.config,
             label_encoder=label_encoder,
@@ -317,8 +329,16 @@ def main():
             log_every_n_steps=20,
         )
 
-        print("Training...")
-        trainer.fit(model, datamodule=datamodule, ckpt_path=ckpt_path)
+        # job type
+        if args.job_type == 'train':
+            print("Training...")
+            trainer.fit(model, datamodule=datamodule, ckpt_path=ckpt_path)
+        else:  # val or test
+            print("Validating...")
+            trainer.validate(model, datamodule=datamodule)
+            if args.job_type == 'test':
+                print("Testing...")
+                trainer.test(model, datamodule=datamodule)
 
 
 if __name__ == '__main__':

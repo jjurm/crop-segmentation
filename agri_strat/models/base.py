@@ -7,6 +7,7 @@ import pandas as pd
 import torch
 import torch.optim as optim
 import wandb
+from lightning.pytorch.trainer.states import TrainerFn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau, LRScheduler
 from torchdata.datapipes.iter import IterableWrapper
@@ -149,8 +150,11 @@ class BaseModelModule(pl.LightningModule):
         Some metrics are expensive to compute and so we only compute them every n validation epochs.
         """
 
-        if self.trainer.state.stage == "sanity_check":
+        if self.trainer.sanity_checking:
             # always run during the sanity check
+            return True
+
+        if self.trainer.testing:
             return True
 
         if self.eval_every_n_val_epoch == 0:
@@ -161,32 +165,34 @@ class BaseModelModule(pl.LightningModule):
         return self.val_epoch % self.eval_every_n_val_epoch == 0
 
     def setup(self, stage: str) -> None:
-        wandb.run.summary["monitor_metric"] = self.monitor_metric
 
         # Register metrics
         step_metric = None
-        if stage == "fit":
+        if stage == TrainerFn.FITTING:
+            wandb.run.summary["monitor_metric"] = self.monitor_metric
+
             step_metric = "trainer/global_step"
             wandb.define_metric(step_metric)
             wandb.define_metric("*", step_metric=step_metric)
 
-        if stage == "fit" or stage == "validate":
+        if stage == TrainerFn.FITTING or stage == TrainerFn.VALIDATING or stage == TrainerFn.TESTING:
+            metric_prefix = "test" if stage == TrainerFn.TESTING else "val"
             metrics_with_summaries = [
-                "val/acc",
-                "val/acc_parcel",
-                "val/f1w",
-                "val/f1w_parcel",
-                "val/f1ma",
-                "val/f1ma_parcel",
-                "val/crop5_acc_parcel",
-                "val/crop5_f1w_parcel",
-                "val/crop5_f1ma_parcel",
+                f"{metric_prefix}/acc",
+                f"{metric_prefix}/acc_parcel",
+                f"{metric_prefix}/f1w",
+                f"{metric_prefix}/f1w_parcel",
+                f"{metric_prefix}/f1ma",
+                f"{metric_prefix}/f1ma_parcel",
+                f"{metric_prefix}/crop5_acc_parcel",
+                f"{metric_prefix}/crop5_f1w_parcel",
+                f"{metric_prefix}/crop5_f1ma_parcel",
             ]
             for metric in metrics_with_summaries:
                 wandb.define_metric(metric, summary="max,last", step_metric=step_metric)
 
         # Log gradients
-        if stage == "fit":
+        if stage == TrainerFn.FITTING:
             wandb.watch(self.model, log_freq=100, log=self.wandb_watch_log)
 
     def configure_optimizers(self):
@@ -355,6 +361,9 @@ class BaseModelModule(pl.LightningModule):
         }
         self.validation_patch_scores = {}
 
+    def on_test_epoch_start(self) -> None:
+        self.on_validation_epoch_start()
+
     def validation_step(self, batch, batch_idx):
         inputs, labels = batch['medians'], batch['labels']  # (B, T, C, H, W), (B, H, W)
         batch_size = inputs.shape[0]
@@ -392,15 +401,19 @@ class BaseModelModule(pl.LightningModule):
             self._collect_per_patch_scores(batch, output)
             self._collect_preview_samples(batch, output)
 
+        metric_prefix = self.trainer.state.stage.dataloader_prefix
         if not self.parcel_loss:
             self.log_dict({
-                'val/f1w': f1w,
+                f"{metric_prefix}/f1w": f1w,
             }, on_step=False, on_epoch=True, logger=False, prog_bar=True, batch_size=batch_size)
         self.log_dict({
-            'val/acc_parcel': acc_parcel,
-            'val/f1w_parcel': f1w_parcel,
-            'val/f1ma_parcel': f1ma_parcel,
+            f"{metric_prefix}/acc_parcel": acc_parcel,
+            f"{metric_prefix}/f1w_parcel": f1w_parcel,
+            f"{metric_prefix}/f1ma_parcel": f1ma_parcel,
         }, on_step=False, on_epoch=True, logger=False, prog_bar=self.parcel_loss, batch_size=batch_size)
+
+    def test_step(self, batch, batch_idx):
+        self.validation_step(batch, batch_idx)
 
     def _collect_per_patch_scores(self, batch, output):
         for i, patch_path in enumerate(batch["patch_path"]):
@@ -472,45 +485,53 @@ class BaseModelModule(pl.LightningModule):
         wandb_cm = self._get_wandb_confusion_matrix(confusion_matrix_cpu)
 
         # Validation metrics will be logged only in on_train_epoch_end together with the training metrics
+        metric_prefix = self.trainer.state.stage.dataloader_prefix
         self.val_metrics = {
-            "val/loss_nll_parcel": self.loss_nll_val.compute().cpu().item(),
-            "val/acc_parcel": self.metric_acc_parcel.compute().cpu().item(),
-            "val/f1w_parcel": self.metric_f1w_parcel.compute().cpu().item(),
-            "val/f1ma_parcel": self.metric_f1ma_parcel.compute().cpu().item(),
-            "val/crop5_acc_parcel": self.metric_crop5_acc_parcel.compute().cpu().item(),
-            "val/crop5_f1w_parcel": self.metric_crop5_f1w_parcel.compute().cpu().item(),
-            "val/crop5_f1ma_parcel": self.metric_crop5_f1ma_parcel.compute().cpu().item(),
-            "confusion_matrix": wandb_cm,
+            f"{metric_prefix}/loss_nll_parcel": self.loss_nll_val.compute().cpu().item(),
+            f"{metric_prefix}/acc_parcel": self.metric_acc_parcel.compute().cpu().item(),
+            f"{metric_prefix}/f1w_parcel": self.metric_f1w_parcel.compute().cpu().item(),
+            f"{metric_prefix}/f1ma_parcel": self.metric_f1ma_parcel.compute().cpu().item(),
+            f"{metric_prefix}/crop5_acc_parcel": self.metric_crop5_acc_parcel.compute().cpu().item(),
+            f"{metric_prefix}/crop5_f1w_parcel": self.metric_crop5_f1w_parcel.compute().cpu().item(),
+            f"{metric_prefix}/crop5_f1ma_parcel": self.metric_crop5_f1ma_parcel.compute().cpu().item(),
+            f"{metric_prefix}/confusion_matrix": wandb_cm,
         }
         if not self.parcel_loss:
             self.val_metrics |= {
-                "val/acc": self.metric_acc.compute().cpu().item(),
-                "val/f1w": self.metric_f1w.compute().cpu().item(),
-                "val/f1ma": self.metric_f1ma.compute().cpu().item(),
+                f"{metric_prefix}/acc": self.metric_acc.compute().cpu().item(),
+                f"{metric_prefix}/f1w": self.metric_f1w.compute().cpu().item(),
+                f"{metric_prefix}/f1ma": self.metric_f1ma.compute().cpu().item(),
             }
 
         if self._should_eval_more():
             class_scores_df = self._compute_class_scores_table(confusion_matrix_cpu)
             patch_scores_df = self._compute_per_patch_scores()
             self.val_metrics |= {
-                "class_scores": wandb.Table(dataframe=class_scores_df),
-                "patch_scores": wandb.Table(dataframe=patch_scores_df),
+                f"{metric_prefix}/class_scores": wandb.Table(dataframe=class_scores_df),
+                f"{metric_prefix}/patch_scores": wandb.Table(dataframe=patch_scores_df),
             }
 
             if not self.trainer.sanity_checking:
                 examples_table, images = self._get_preview_table_and_samples()
                 self.val_metrics |= {
-                    "examples": images,
-                    "examples_table": examples_table,
+                    f"{metric_prefix}/examples": images,
+                    f"{metric_prefix}/examples_table": examples_table,
                 }
 
-        if not self.trainer.sanity_checking:
+        if not self.trainer.sanity_checking and not self.trainer.testing:
             self._update_learning_rate()
 
         self._reset_val_metrics()
 
         self.validation_examples = None
         self.validation_patch_scores = None
+
+    def on_test_epoch_end(self) -> None:
+        self.on_validation_epoch_end()
+
+        self.logger.log_metrics(self.val_metrics)
+        self.logger.log_now(dry_run=self.trainer.sanity_checking)
+        self.val_metrics = {}
 
     def _reset_val_metrics(self):
         self.loss_nll_val.reset()
