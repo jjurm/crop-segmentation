@@ -154,7 +154,7 @@ class BaseModelModule(pl.LightningModule):
             # always run during the sanity check
             return True
 
-        if self.trainer.testing:
+        if self.trainer.validating or self.trainer.testing:
             return True
 
         if self.eval_every_n_val_epoch == 0:
@@ -165,7 +165,6 @@ class BaseModelModule(pl.LightningModule):
         return self.val_epoch % self.eval_every_n_val_epoch == 0
 
     def setup(self, stage: str) -> None:
-
         # Register metrics
         step_metric = None
         if stage == TrainerFn.FITTING:
@@ -518,7 +517,7 @@ class BaseModelModule(pl.LightningModule):
                     f"{metric_prefix}/examples_table": examples_table,
                 }
 
-        if not self.trainer.sanity_checking and not self.trainer.testing:
+        if self.trainer.training:
             self._update_learning_rate()
 
         self._reset_val_metrics()
@@ -526,12 +525,14 @@ class BaseModelModule(pl.LightningModule):
         self.validation_examples = None
         self.validation_patch_scores = None
 
+        # Log metrics
+        if self.trainer.validating or self.trainer.testing:
+            self.logger.log_metrics(self.val_metrics)
+            self.logger.log_now(dry_run=self.trainer.sanity_checking)
+            self.val_metrics = {}
+
     def on_test_epoch_end(self) -> None:
         self.on_validation_epoch_end()
-
-        self.logger.log_metrics(self.val_metrics)
-        self.logger.log_now(dry_run=self.trainer.sanity_checking)
-        self.val_metrics = {}
 
     def _reset_val_metrics(self):
         self.loss_nll_val.reset()
