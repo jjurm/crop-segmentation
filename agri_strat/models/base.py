@@ -228,10 +228,13 @@ class BaseModelModule(pl.LightningModule):
         checkpoint["pixels_seen"] = self.num_pixels_seen
 
     def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
-        self.num_batches = n if (n := checkpoint["num_batches"]) is not None else 0
-        self.num_samples_seen = n if (n := checkpoint["samples_seen"]) is not None else 0
-        self.num_samples_considered = n if (n := checkpoint["samples_considered"]) is not None else 0
-        self.num_pixels_seen = n if (n := checkpoint["pixels_seen"]) is not None else 0
+        # noinspection PyUnboundLocalVariable
+        self.num_batches = n if "num_batches" in checkpoint and (n := checkpoint["num_batches"]) is not None else 0
+        self.num_samples_seen = n if "samples_seen" in checkpoint and (
+            n := checkpoint["samples_seen"]) is not None else 0
+        self.num_samples_considered = n if "samples_considered" in checkpoint and (
+            n := checkpoint["samples_considered"]) is not None else 0
+        self.num_pixels_seen = n if "pixels_seen" in checkpoint and (n := checkpoint["pixels_seen"]) is not None else 0
 
     def _get_trainer_metrics(self):
         return {
