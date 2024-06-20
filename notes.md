@@ -142,7 +142,7 @@ runai submit \
   -e ENV_FILE=/myhome/.env \
   --backoff-limit 0 \
   --preemptible \
-  --name wla3 \
+  --name wla1 \
   -- wandb launch-agent -c /myhome/.config/wandb/launch-config.yaml
 ```
 scheduler
