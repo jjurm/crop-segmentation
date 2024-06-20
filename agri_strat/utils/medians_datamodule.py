@@ -108,10 +108,10 @@ class MediansDataModule(pl.LightningDataModule):
             self.pixel_counts[split] = splits_artifact.get(f"pixel_counts_{split}").get_dataframe() \
                 .set_index("class")["count"].to_dict()
 
-    def setup(self, stage: str = 'fit'):
         with open(self.metadata_path, 'r') as f:
             self.metadata = MediansMetadata.from_json(f.read())
 
+    def setup(self, stage: str = 'fit'):
         common_config = {
             'medians_subdir': self.medians_subdir,
             'medians_metadata': self.metadata,
