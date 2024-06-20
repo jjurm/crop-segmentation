@@ -5,6 +5,8 @@ import pandas as pd
 import torch
 import wandb
 from math import ceil
+
+from lightning.pytorch.trainer.states import TrainerFn
 from torch.utils.data import DataLoader
 from torchdata.datapipes.iter import IterableWrapper
 
@@ -118,7 +120,7 @@ class MediansDataModule(pl.LightningDataModule):
             'requires_norm': self.requires_norm,
         }
 
-        if stage == 'fit':
+        if stage == TrainerFn.FITTING:
             self.dataset_train = MediansDataset(split_file=(self.splits_dir / "train.txt"),
                                                 patch_count=self.patch_counts["train"],
                                                 global_seed=self.seed,
@@ -127,12 +129,13 @@ class MediansDataModule(pl.LightningDataModule):
                                                 limit_batches=self.limit_train_batches,
                                                 shuffle_subpatches_within_patch=self.shuffle_subpatches_within_patch,
                                                 **common_config)
+        if stage == TrainerFn.FITTING or stage == TrainerFn.VALIDATING:
             self.dataset_val = MediansDataset(split_file=(self.splits_dir / "val.txt"),
                                               patch_count=self.patch_counts["val"],
                                               batched=True,
                                               limit_batches=self.limit_val_batches,
                                               **common_config)
-        elif stage == 'test':
+        elif stage == TrainerFn.TESTING:
             self.dataset_test = MediansDataset(split_file=(self.splits_dir / "test.txt"),
                                                patch_count=self.patch_counts["test"],
                                                batched=True,

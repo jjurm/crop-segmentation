@@ -177,8 +177,6 @@ def create_datamodule(config, label_encoder, calculated_batch_size, accumulate_g
         limit_val_batches=limit if (limit := config["limit_val_batches"]) and limit % 1.0 != 0 else None,
         shuffle_subpatches_within_patch=config["shuffle_subpatches_within_patch"],
     )
-    datamodule.prepare_data()
-    datamodule.setup('fit')
     return datamodule
 
 
