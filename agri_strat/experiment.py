@@ -334,10 +334,10 @@ def main():
             trainer.fit(model, datamodule=datamodule, ckpt_path=ckpt_path)
         else:  # val or test
             print("Validating...")
-            trainer.validate(model, datamodule=datamodule)
+            trainer.validate(model, datamodule=datamodule, ckpt_path=ckpt_path)
             if args.job_type == 'test':
                 print("Testing...")
-                trainer.test(model, datamodule=datamodule)
+                trainer.test(model, datamodule=datamodule, ckpt_path=ckpt_path)
 
 
 if __name__ == '__main__':
