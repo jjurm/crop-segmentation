@@ -80,7 +80,6 @@ class MediansDataModule(pl.LightningDataModule):
         }
 
         # prepare_data() will set these
-        self.metadata_path: Path | None = None
         self.medians_subdir: Path | None = None
         self.splits_dir: Path | None = None
         self.patch_counts: pd.DataFrame | None = {}
@@ -96,7 +95,9 @@ class MediansDataModule(pl.LightningDataModule):
     def prepare_data(self):
         # Medians metadata and directory
         medians_artifact = wandb.run.use_artifact(self.medians_artifact, type='medians')
-        self.metadata_path = Path(medians_artifact.get_entry("meta.json").download())
+        metadata_path = Path(medians_artifact.get_entry("meta.json").download())
+        with open(metadata_path, 'r') as f:
+            self.metadata = MediansMetadata.from_json(f.read())
         self.medians_subdir = Path(self.medians_path) / medians_artifact.metadata["medians_dir_name"]
 
         # Splits
@@ -108,8 +109,7 @@ class MediansDataModule(pl.LightningDataModule):
             self.pixel_counts[split] = splits_artifact.get(f"pixel_counts_{split}").get_dataframe() \
                 .set_index("class")["count"].to_dict()
 
-        with open(self.metadata_path, 'r') as f:
-            self.metadata = MediansMetadata.from_json(f.read())
+
 
     def setup(self, stage: str = 'fit'):
         common_config = {
