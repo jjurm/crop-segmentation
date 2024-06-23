@@ -529,7 +529,7 @@ class BaseModelModule(pl.LightningModule):
         self.validation_patch_scores = None
 
         # Log metrics
-        if self.trainer.validating or self.trainer.testing:
+        if self.trainer.state.fn in [TrainerFn.VALIDATING, TrainerFn.TESTING]:
             self.logger.log_metrics(self.val_metrics)
             self.logger.log_now(dry_run=self.trainer.sanity_checking)
             self.val_metrics = {}
