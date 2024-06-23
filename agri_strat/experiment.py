@@ -343,22 +343,21 @@ def run_job(
     kwargs = dict(
         model=model,
         datamodule=datamodule,
-        ckpt_path=ckpt_path,
     )
 
     if job_type == 'train':
-        trainer.fit(**kwargs)
+        trainer.fit(ckpt_path=ckpt_path, **kwargs)
 
     elif job_type == 'train_test':
-        trainer.fit(**kwargs)
+        trainer.fit(ckpt_path=ckpt_path, **kwargs)
         trainer.test(**kwargs)
 
     elif job_type == 'val':
-        trainer.validate(**kwargs)
+        trainer.validate(ckpt_path=ckpt_path, **kwargs)
 
     elif job_type == 'test':
-        trainer.validate(**kwargs)
-        trainer.test(**kwargs)
+        trainer.validate(ckpt_path=ckpt_path, **kwargs)
+        trainer.test(ckpt_path=ckpt_path, **kwargs)
 
     else:
         raise ValueError(f"Invalid job type: {job_type}")
