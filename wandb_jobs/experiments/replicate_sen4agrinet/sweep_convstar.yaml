@@ -1,4 +1,4 @@
-job: 'jjurm/agri-strat/experiment:sweep'
+job: 'jjurm/agri-strat/train_test:sweep'
 method: grid
 name: exp-replicate-convstar
 metric:
@@ -56,11 +56,4 @@ parameters:
   active_sampling_relevancy_score:
     value: ["none"]
 scheduler:
-  num_workers: 6
-command:
-  - ${env}
-  - ${interpreter}
-  - ${program}
-  - "--job_type"
-  - "train_test"
-  - ${args}
+  num_workers: 2
