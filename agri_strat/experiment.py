@@ -4,6 +4,7 @@ __author__ = "Juraj Micko"
 __license__ = "MIT License"
 
 from utils.callbacks.custom_model_checkpoint import CustomModelCheckpoint
+from utils.callbacks.print_stage import PrintStageCallback
 
 if __name__ == '__main__':
     print("Importing modules...")
@@ -35,7 +36,7 @@ def parse_arguments():
 
     parser = parser_with_groups.add_argument_group('job')
     parser.add_argument('--job_type', type=str, default="train", required=False,
-                        choices=['train', 'val', 'test'],
+                        choices=['train', 'val', 'test', 'train_test'],
                         help='Type of job to perform. One of [\'train\', \'val\', \'test\']')
     parser.add_argument('--tags', nargs="+", default=None, required=False,
                         help='Tags stored with the wandb job.')
@@ -277,6 +278,7 @@ def main():
         )
 
         callbacks = [
+            PrintStageCallback(),
             BatchCounterCallback(
                 datamodule,
                 # The following scenario is not supported:
@@ -328,16 +330,38 @@ def main():
             log_every_n_steps=20,
         )
 
-        # job type
-        if args.job_type == 'train':
-            print("Training...")
-            trainer.fit(model, datamodule=datamodule, ckpt_path=ckpt_path)
-        else:  # val or test
-            print("Validating...")
-            trainer.validate(model, datamodule=datamodule, ckpt_path=ckpt_path)
-            if args.job_type == 'test':
-                print("Testing...")
-                trainer.test(model, datamodule=datamodule, ckpt_path=ckpt_path)
+        run_job(args.job_type, trainer, model, datamodule, ckpt_path)
+
+
+def run_job(
+        job_type: str,
+        trainer: pl.Trainer,
+        model: BaseModelModule,
+        datamodule: MediansDataModule,
+        ckpt_path: str | None,
+):
+    kwargs = dict(
+        model=model,
+        datamodule=datamodule,
+        ckpt_path=ckpt_path,
+    )
+
+    if job_type == 'train':
+        trainer.fit(**kwargs)
+
+    elif job_type == 'train_test':
+        trainer.fit(**kwargs)
+        trainer.test(**kwargs)
+
+    elif job_type == 'val':
+        trainer.validate(**kwargs)
+
+    elif job_type == 'test':
+        trainer.validate(**kwargs)
+        trainer.test(**kwargs)
+
+    else:
+        raise ValueError(f"Invalid job type: {job_type}")
 
 
 if __name__ == '__main__':

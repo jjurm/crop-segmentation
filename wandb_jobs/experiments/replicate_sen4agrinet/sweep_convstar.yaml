@@ -57,3 +57,10 @@ parameters:
     value: ["none"]
 scheduler:
   num_workers: 6
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - "--job_type"
+  - "train_test"
+  - ${args}
