@@ -292,7 +292,7 @@ def main():
             ),
             ExceptionTrackerCallback(),
             CustomLearningRateMonitor(),
-            CustomModelCheckpoint(
+            model_checkpoint := CustomModelCheckpoint(
                 dirpath=Path(wandb.run.dir) / "checkpoints",
                 filename='ckpt_epoch={epoch:02d}',
                 monitor=model.monitor_metric,
@@ -330,7 +330,7 @@ def main():
             log_every_n_steps=20,
         )
 
-        run_job(args.job_type, trainer, model, datamodule, ckpt_path)
+        run_job(args.job_type, trainer, model, datamodule, ckpt_path, model_checkpoint)
 
 
 def run_job(
@@ -339,6 +339,7 @@ def run_job(
         model: BaseModelModule,
         datamodule: MediansDataModule,
         ckpt_path: str | None,
+        model_checkpoint: CustomModelCheckpoint,
 ):
     kwargs = dict(
         model=model,
@@ -350,7 +351,8 @@ def run_job(
 
     elif job_type == 'train_test':
         trainer.fit(ckpt_path=ckpt_path, **kwargs)
-        trainer.test(**kwargs)
+        best_model_path = model_checkpoint.best_model_path
+        trainer.test(ckpt_path=best_model_path, **kwargs)
 
     elif job_type == 'val':
         trainer.validate(ckpt_path=ckpt_path, **kwargs)
