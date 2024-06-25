@@ -90,13 +90,13 @@ class BaseModelModule(pl.LightningModule):
         self.metric_f1w = None
         self.metric_f1ma = None
         if not self.parcel_loss:
-            self.metric_acc = MulticlassAccuracy(num_classes=num_classes, average="macro")
+            self.metric_acc = MulticlassAccuracy(num_classes=num_classes, average="micro")
             self.metric_f1w = MulticlassF1Score(num_classes=num_classes, average="weighted")
             self.metric_f1ma = MulticlassF1Score(num_classes=num_classes, average="macro")
-        self.metric_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="macro", ignore_index=0)
+        self.metric_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="micro", ignore_index=0)
         self.metric_f1w_parcel = MulticlassF1Score(num_classes=num_classes, average="weighted", ignore_index=0)
         self.metric_f1ma_parcel = MulticlassF1Score(num_classes=num_classes, average="macro", ignore_index=0)
-        self.metric_crop5_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="macro", ignore_index=0)
+        self.metric_crop5_acc_parcel = MulticlassAccuracy(num_classes=num_classes, average="micro", ignore_index=0)
         self.metric_crop5_f1w_parcel = MulticlassF1Score(num_classes=num_classes, average="weighted", ignore_index=0)
         self.metric_crop5_f1ma_parcel = MulticlassF1Score(num_classes=num_classes, average="macro", ignore_index=0)
         self.confusion_matrix = MulticlassConfusionMatrix(num_classes=num_classes, normalize="none",
@@ -428,13 +428,13 @@ class BaseModelModule(pl.LightningModule):
             if patch_path not in self.validation_patch_scores:
                 self.validation_patch_scores[patch_path] = {
                     "acc_parcel": MulticlassAccuracy(num_classes=self.label_encoder.num_classes,
-                                                     average="macro", ignore_index=0).to(self.device),
+                                                     average="micro", ignore_index=0).to(self.device),
                     "f1w_parcel": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
                                                     average="weighted", ignore_index=0).to(self.device),
                     "f1ma_parcel": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
                                                      average="macro", ignore_index=0).to(self.device),
                     "crop5_acc_parcel": MulticlassAccuracy(num_classes=self.label_encoder.num_classes,
-                                                           average="macro", ignore_index=0).to(self.device),
+                                                           average="micro", ignore_index=0).to(self.device),
                     "crop5_f1w_parcel": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
                                                           average="weighted", ignore_index=0).to(self.device),
                     "crop5_f1ma_parcel": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
@@ -444,7 +444,7 @@ class BaseModelModule(pl.LightningModule):
                 if not self.parcel_loss:
                     self.validation_patch_scores[patch_path] |= {
                         "acc": MulticlassAccuracy(num_classes=self.label_encoder.num_classes,
-                                                  average="macro").to(self.device),
+                                                  average="micro").to(self.device),
                         "f1w": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
                                                  average="weighted").to(self.device),
                         "f1ma": MulticlassF1Score(num_classes=self.label_encoder.num_classes,
