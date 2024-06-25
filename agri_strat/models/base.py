@@ -188,7 +188,9 @@ class BaseModelModule(pl.LightningModule):
                 f"{metric_prefix}/crop5_f1ma_parcel",
             ]
             for metric in metrics_with_summaries:
-                wandb.define_metric(metric, summary="max,last", step_metric=step_metric)
+                wandb.define_metric(metric,
+                                    summary=(None if stage == TrainerFn.TESTING else "max,last"),
+                                    step_metric=step_metric)
 
         # Log gradients
         if stage == TrainerFn.FITTING:
