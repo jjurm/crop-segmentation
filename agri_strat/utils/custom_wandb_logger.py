@@ -10,6 +10,7 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.loggers.utilities import _scan_checkpoints
 from lightning_fabric.utilities.logger import _add_prefix
 from torch import Tensor
+from wandb.sdk.wandb_summary import SummaryDict
 
 
 class CustomWandbLogger(WandbLogger):
@@ -66,9 +67,9 @@ class CustomWandbLogger(WandbLogger):
             metadata = {
                 "score": s.item() if isinstance(s, Tensor) else s,
                 "summary": {
-                    k: v
+                    k: dict(v) if isinstance(v, SummaryDict) else v
                     for k, v in dict(self.experiment.summary).items()
-                    if (k.startswith("val/") and (not isinstance(v, dict) or "_type" not in v))
+                    if (k.startswith("val/") and (not isinstance(v, SummaryDict) or "_type" not in dict(v)))
                        or k.startswith("trainer/")
                        or k in ["_step", "epoch", "val_epoch", "lr-Adam"]
                        or (k.startswith("train/") and k.endswith("_epoch"))
