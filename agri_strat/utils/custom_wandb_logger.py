@@ -65,7 +65,14 @@ class CustomWandbLogger(WandbLogger):
         for t, p, s, tag in checkpoints:
             metadata = {
                 "score": s.item() if isinstance(s, Tensor) else s,
-                "summary": self.experiment.summary,
+                "summary": {
+                    k: v
+                    for k, v in self.experiment.summary.items()
+                    if (k.startswith("val/") and (not isinstance(v, dict) or "_type" not in v))
+                       or k.startswith("trainer/")
+                       or k in ["_step", "epoch", "val_epoch", "lr-Adam"]
+                       or (k.startswith("train/") and k.endswith("_epoch"))
+                },
                 "original_filename": Path(p).name,
                 checkpoint_callback.__class__.__name__: {
                     k: getattr(checkpoint_callback, k)
