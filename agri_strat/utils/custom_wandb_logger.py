@@ -67,7 +67,7 @@ class CustomWandbLogger(WandbLogger):
                 "score": s.item() if isinstance(s, Tensor) else s,
                 "summary": {
                     k: v
-                    for k, v in self.experiment.summary.items()
+                    for k, v in dict(self.experiment.summary).items()
                     if (k.startswith("val/") and (not isinstance(v, dict) or "_type" not in v))
                        or k.startswith("trainer/")
                        or k in ["_step", "epoch", "val_epoch", "lr-Adam"]
