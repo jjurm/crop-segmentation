@@ -253,7 +253,7 @@ def main():
             calculated_batch_size, accumulate_grad_batches = run.config["batch_size"], 1
 
         print("Creating datamodule, model, trainer...")
-        label_encoder = LabelEncoder(run.config["label_encoder_artifact"])
+        label_encoder = LabelEncoder(run.use_artifact(run.config["label_encoder_artifact"], type="label_encoder"))
         datamodule = create_datamodule(
             config=run.config,
             label_encoder=label_encoder,

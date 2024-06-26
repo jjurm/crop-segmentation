@@ -5,8 +5,7 @@ import yaml
 
 
 class LabelEncoder:
-    def __init__(self, label_encoder_artifact: str):
-        artifact = wandb.run.use_artifact(label_encoder_artifact, type="label_encoder")
+    def __init__(self, artifact: wandb.Artifact):
         label_encoder_filename = artifact.file()
         with open(label_encoder_filename, 'r') as file:
             encoder_list = yaml.safe_load(file)["labels"]
