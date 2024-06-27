@@ -474,8 +474,9 @@ class BaseModelModule(pl.LightningModule):
 
     def _collect_preview_samples(self, batch, output):
         # Collect validation examples to show as images
-        want_examples = (NUM_VALIDATION_PATCH_EXAMPLES_TEST if self.trainer.testing else NUM_VALIDATION_PATCH_EXAMPLES) \
-                        * self.medians_metadata.num_subpatches_per_patch
+        num_validation_patch_examples = (
+            NUM_VALIDATION_PATCH_EXAMPLES_TEST if self.trainer.testing else NUM_VALIDATION_PATCH_EXAMPLES)
+        want_examples = num_validation_patch_examples * self.medians_metadata.num_subpatches_per_patch
         has_examples = len(self.validation_examples["inputs"])
         if has_examples < want_examples:
             self.validation_examples["patch"].extend(batch["patch_path"][:(want_examples - has_examples)])
@@ -629,7 +630,9 @@ class BaseModelModule(pl.LightningModule):
     def _get_preview_table_and_samples(self):
         # This should hold for all validation epochs with enough of examples
         # and only fail for cases like sanity check or a devtest run
-        needed_example = NUM_VALIDATION_PATCH_EXAMPLES * self.medians_metadata.num_subpatches_per_patch
+        num_validation_patch_examples = (
+            NUM_VALIDATION_PATCH_EXAMPLES_TEST if self.trainer.testing else NUM_VALIDATION_PATCH_EXAMPLES)
+        needed_example = num_validation_patch_examples * self.medians_metadata.num_subpatches_per_patch
         assert len(self.validation_examples["patch"]) == needed_example, (
             f"Not enough subpatches for validation examples: got {len(self.validation_examples['patch'])} < "
             f"{needed_example} wanted"
@@ -654,7 +657,7 @@ class BaseModelModule(pl.LightningModule):
         pixels_dtype = self.validation_examples["inputs"][0].dtype
         labels_dtype = self.validation_examples["labels"][0].dtype
         predictions_dtype = self.validation_examples["outputs"][0].dtype
-        for i_patch in range(NUM_VALIDATION_PATCH_EXAMPLES):
+        for i_patch in range(num_validation_patch_examples):
             # The following assumes that each patch has its 'num_subpatches_per_patch' subpatches in a sequence
             # i.e. that the subpatches are not shuffled within a patch
             patch = self.validation_examples["patch"][i_patch * self.medians_metadata.num_subpatches_per_patch]
