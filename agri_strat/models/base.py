@@ -24,6 +24,7 @@ from utils.label_encoder import LabelEncoder
 from utils.medians_metadata import MediansMetadata
 
 NUM_VALIDATION_PATCH_EXAMPLES = 6
+NUM_VALIDATION_PATCH_EXAMPLES_TEST = 18
 CLASS_LABEL_IGNORED = 255
 
 
@@ -473,7 +474,8 @@ class BaseModelModule(pl.LightningModule):
 
     def _collect_preview_samples(self, batch, output):
         # Collect validation examples to show as images
-        want_examples = NUM_VALIDATION_PATCH_EXAMPLES * self.medians_metadata.num_subpatches_per_patch
+        want_examples = (NUM_VALIDATION_PATCH_EXAMPLES_TEST if self.trainer.testing else NUM_VALIDATION_PATCH_EXAMPLES) \
+                        * self.medians_metadata.num_subpatches_per_patch
         has_examples = len(self.validation_examples["inputs"])
         if has_examples < want_examples:
             self.validation_examples["patch"].extend(batch["patch_path"][:(want_examples - has_examples)])
