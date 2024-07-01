@@ -1,0 +1,178 @@
+# $schema: ../../schema/label_encoder.schema.json
+labels:
+  - name: Unknown
+    id:
+      - 192  # Other
+      - 977  # No Data Available
+  - name: Crops of interest
+    id:
+      - 110  # Wheat
+      - 120  # Maize
+      - 140  # Sorghum
+      - 150  # Barley
+      - 160  # Rye
+      - 170  # Oats
+      - 330  # Grapes
+      - 435  # Rapeseed
+      - 438  # Sunflower
+      - 510  # Potatoes
+      - 770  # Peas
+  - name: Other crops
+    id:
+      - 100  # Cereals
+      - 130  # Rice
+      - 180  # Millets
+      - 190  # Other cereals n.e.c.
+      - 191  # Mixed cereals
+      - 200  # Vegetables and melons
+      - 210  # Leafy or stem vegetables
+      - 211  # Artichokes
+      - 212  # Asparagus
+      - 213  # Cabbages
+      - 214  # Cauliflowers and broccoli
+      - 215  # Lettuce
+      - 216  # Spinach
+      - 217  # Chicory
+      - 219  # Other leafy or stem vegetables n.e.c.
+      - 220  # Fruit bearing vegetables
+      - 221  # Cucumbers
+      - 222  # Eggplants (aubergines)
+      - 223  # Tomatoes
+      - 224  # Watermelons
+      - 225  # Cantaloupes and other melons
+      - 226  # Pumpkin squash and gourds
+      - 227  # Other fruit bearing vegetables n.e.c.
+      - 230  # Root bulb or tuberous vegetables
+      - 231  # Carrots
+      - 232  # Turnips
+      - 233  # Garlic
+      - 234  # Onions (incl. shallots)
+      - 235  # Leeks and other alliaceous vegetables
+      - 236  # Other root bulb or tuberous vegetables n.e.c.
+      - 240  # Mushrooms and truffles
+      - 250  # Vegetables n.e.c.
+      - 300  # Fruit and nuts
+      - 310  # Tropical and subtropical fruits
+      - 311  # Avocados
+      - 312  # Bananas and plantains
+      - 313  # Dates
+      - 314  # Figs
+      - 315  # Mangoes
+      - 316  # Papayas
+      - 317  # Pineapples
+      - 318  # Other tropical and subtropical fruits n.e.c.
+      - 320  # Citrus fruits
+      - 321  # Grapefruit and pomelo
+      - 322  # Lemons and Limes
+      - 323  # Oranges
+      - 324  # Tangerines mandarins clementines
+      - 325  # Other citrus fruit n.e.c.
+      - 340  # Berries
+      - 341  # Currants
+      - 342  # Gooseberries
+      - 343  # Kiwi fruit
+      - 344  # Raspberries
+      - 345  # Strawberries
+      - 346  # Blueberries
+      - 347  # Other berries
+      - 350  # Pome fruits and stone fruits
+      - 351  # Apples
+      - 352  # Apricots
+      - 353  # Cherries and sour cherries
+      - 354  # Peaches and nectarines
+      - 355  # Pears and quinces
+      - 356  # Plums and sloes
+      - 357  # Other pome fruits and stone fruits n.e.c.
+      - 360  # Nuts
+      - 361  # Almonds
+      - 362  # Cashew nuts
+      - 363  # Chestnuts
+      - 364  # Hazelnuts
+      - 365  # Pistachios
+      - 366  # Walnuts
+      - 367  # Other nuts n.e.c.
+      - 380  # Other fruits
+      - 400  # Oilseed crops
+      - 410  # Soya beans
+      - 420  # Groundnuts
+      - 430  # Other temporary oilseed crops
+      - 431  # Castor bean
+      - 432  # Linseed
+      - 433  # Mustard
+      - 434  # Niger seed
+      - 436  # Safflower
+      - 437  # Sesame
+      - 439  # Other temporary oilseed crops n.e.c.
+      - 440  # Permanent oilseed crops
+      - 441  # Coconuts
+      - 442  # Olives
+      - 443  # Oil palms
+      - 444  # Other oleaginous fruits n.e.c.
+      - 500  # Root tuber crops with high starch or inulin content
+      - 520  # Sweet potatoes
+      - 530  # Cassava
+      - 540  # Yams
+      - 550  # Other roots and tubers n.e.c.
+      - 600  # Beverage and spice crops
+      - 610  # Beverage crops
+      - 611  # Coffee
+      - 612  # Tea
+      - 613  # Mate
+      - 614  # Cocoa
+      - 615  # Other beverage crops n.e.c.
+      - 620  # Spice crops
+      - 621  # Chilies and peppers (capsicum spp.)
+      - 622  # Anise badian and fennel
+      - 623  # Other temporary spice crops n.e.c.
+      - 624  # Pepper (piper spp.)
+      - 625  # Nutmeg mace cardamoms
+      - 626  # Cinnamon (canella)
+      - 627  # Cloves
+      - 628  # Ginger
+      - 629  # Vanilla
+      - 630  # Other permanent spice crops n.e.c.
+      - 700  # Leguminous crops
+      - 710  # Beans
+      - 720  # Broad beans
+      - 730  # Chick peas
+      - 740  # Cow peas
+      - 750  # Lentils
+      - 760  # Lupins
+      - 780  # Pigeon peas
+      - 790  # Leguminous crops n.e.c.
+      - 800  # Sugar crops
+      - 810  # Sugar beet
+      - 820  # Sugar cane
+      - 830  # Sweet sorghum
+      - 840  # Other sugar crops n.e.c.
+      - 900  # Other crops and Classes
+      - 910  # Grasses and other fodder crops
+      - 911  # Temporary grass crops
+      - 912  # Permanent grass crops
+      - 920  # Fiber crops
+      - 921  # Cotton
+      - 922  # Jute kenaf other similar crops
+      - 923  # Flax hemp and other similar products
+      - 924  # Other temporary fibre crops
+      - 925  # Permanent fibre crops
+      - 930  # Medicinal aromatic pesticidal or similar crops
+      - 931  # Temporary medicinal etc. crops
+      - 932  # Permanent medicinal etc. crops
+      - 940  # Rubber
+      - 950  # Flower crops
+      - 951  # Temporary flower crops
+      - 952  # Permanent flower crops
+      - 960  # Tobacco
+      - 980  # Other crops
+      - 981  # Other crops temporary
+      - 982  # Other crops permanent
+      - 998  # Unknown crops
+  - name: Non-crops
+    id:
+      - 970  # Other Classes
+      - 971  # Artificial Surfaces
+      - 972  # Forest
+      - 973  # Wetlands
+      - 974  # Water bodies
+      - 975  # Fallow land
+      - 976  # Baren land
