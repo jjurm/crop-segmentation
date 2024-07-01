@@ -12,7 +12,10 @@ import wandb
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--split_artifact", type=str, required=True, help="Artifact of the type 'split'.")
+    # One of --split_artifact and __xy_lims is required
+    parser.add_argument("--split_artifact", type=str, required=False, help="Artifact of the type 'split'.")
+    parser.add_argument("--xy_lims", type=float, nargs=4, required=False,
+                        help="Limits of the x and y axes in the form x_min x_max y_min y_max.")
     parser.add_argument("--dem_path", type=str, default=None, required=False,
                         help="Directory to save the SRTM30m data. Default: $DEM_PATH or 'dataset/dem/srtm30'.")
     return parser.parse_args()
@@ -20,22 +23,30 @@ def parse_args():
 
 def main():
     config = vars(parse_args())
-    api = wandb.Api()
 
     # Read the SRTM30m shapes
     srtm30_boxes = gpd.read_file("dataset/shapes/srtm30m_bounding_boxes.json")
 
-    # Read the patch polygons
-    print("Reading splits artifact...")
-    splits_artifact = api.artifact(config["split_artifact"], type='split')
-    splits_polygons = splits_artifact.get_entry("splits_polygons.gpkg").download()
-    splits_gdf = gpd.read_file(splits_polygons)
+    if config["split_artifact"]:
+        api = wandb.Api()
 
-    # Get all shapes that have an intersection with the splits
-    print("Finding intersecting SRTM30m shapes...")
-    srtm30_boxes["intersects"] = srtm30_boxes.intersects(splits_gdf.unary_union)
-    intersecting_boxes = srtm30_boxes[srtm30_boxes["intersects"]]
-    intersecting_boxes = intersecting_boxes
+        # Read the patch polygons
+        print("Reading splits artifact...")
+        splits_artifact = api.artifact(config["split_artifact"], type='split')
+        splits_polygons = splits_artifact.get_entry("splits_polygons.gpkg").download()
+        splits_gdf = gpd.read_file(splits_polygons)
+
+        # Get all shapes that have an intersection with the splits
+        print("Finding intersecting SRTM30m shapes...")
+        srtm30_boxes["intersects"] = srtm30_boxes.intersects(splits_gdf.unary_union)
+        intersecting_boxes = srtm30_boxes[srtm30_boxes["intersects"]]
+
+    elif config["xy_lims"]:
+        x_min, x_max, y_min, y_max = config["xy_lims"]
+        intersecting_boxes = srtm30_boxes.cx[x_min:x_max, y_min:y_max]
+
+    else:
+        raise ValueError("One of --split_artifact and --xy_lims is required.")
 
     # Download the SRTM30m data
     print("Downloading SRTM30m data...")
@@ -55,7 +66,7 @@ def main():
                 opener.addheaders = [('Authorization', 'Bearer ' + bearer_token)]
                 urllib.request.install_opener(opener)
                 result = urllib.request.urlretrieve(url, download_path, data=None)
-                print(f"Downloaded {result[0]}: {(result[1]['Content-Length'] // 1024) / 1024}MB.")
+                print(f"Downloaded {result[0]}: {(int(result[1]['Content-Length']) // 1024) / 1024}MB.")
             else:
                 print(f"Skipped existing {download_path}.")
 
