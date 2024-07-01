@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 from torch.nn import init
 
-from models.utils import initialize_last_layer_bias
+from agri_strat.models.utils import initialize_last_layer_bias
 
 
 class ConvSTARCell(nn.Module):

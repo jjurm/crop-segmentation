@@ -8,7 +8,7 @@ import shapely.ops
 import wandb
 from pyproj import Transformer
 
-from utils.splits.patch.patch_processor import PatchProcessor
+from agri_strat.utils.splits.patch.patch_processor import PatchProcessor
 
 TARGET_CRS = "EPSG:4326"
 

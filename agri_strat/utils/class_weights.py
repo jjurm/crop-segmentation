@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import wandb
 
-from utils.label_encoder import LabelEncoder
+from agri_strat.utils.label_encoder import LabelEncoder
 
 
 def _calculate_class_weights(relative_class_frequencies) -> torch.Tensor:

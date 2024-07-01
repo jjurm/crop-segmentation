@@ -9,7 +9,7 @@ import rasterstats
 import rioxarray
 from rasterio import MemoryFile
 
-from utils.splits.patch.patch_processor import PatchProcessor
+from agri_strat.utils.splits.patch.patch_processor import PatchProcessor
 
 
 class PatchElevationStats(PatchProcessor):

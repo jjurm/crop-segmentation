@@ -14,13 +14,13 @@ import pandas as pd
 import swifter
 
 import wandb
-from utils.splits.coco import split_by_coco_files
-from utils.splits.patch.elevation import PatchElevationStats
-from utils.splits.patch.filename_attrs import PatchFilenameAttrs
-from utils.splits.patch.geometry import PatchGeometry
-from utils.splits.patch.patch_processor import PatchProcessor, PatchApplyFn
-from utils.splits.patch.pixel_counter import ClassPixelCounts, ClassPixelCountsPerSplit
-from utils.splits.split_rules import split_by_split_rules, random_splits
+from agri_strat.utils.splits.coco import split_by_coco_files
+from agri_strat.utils.splits.patch.elevation import PatchElevationStats
+from agri_strat.utils.splits.patch.filename_attrs import PatchFilenameAttrs
+from agri_strat.utils.splits.patch.geometry import PatchGeometry
+from agri_strat.utils.splits.patch.patch_processor import PatchProcessor, PatchApplyFn
+from agri_strat.utils.splits.patch.pixel_counter import ClassPixelCounts, ClassPixelCountsPerSplit
+from agri_strat.utils.splits.split_rules import split_by_split_rules, random_splits
 
 
 def parse_arguments():

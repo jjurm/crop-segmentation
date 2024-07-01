@@ -3,7 +3,7 @@ from pathlib import Path
 import netCDF4
 import pandas as pd
 
-from utils.splits.patch.patch_processor import PatchProcessor
+from agri_strat.utils.splits.patch.patch_processor import PatchProcessor
 
 
 class PatchFilenameAttrs(PatchProcessor):

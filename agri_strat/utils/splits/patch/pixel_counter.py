@@ -6,9 +6,9 @@ import pandas as pd
 import wandb
 import xarray as xr
 
-from mappings.encodings_en import CROP_ENCODING_REVERSE
-from utils.constants import LABEL_DTYPE
-from utils.splits.patch.patch_processor import PatchProcessor
+from agri_strat.mappings.encodings_en import CROP_ENCODING_REVERSE
+from agri_strat.utils.constants import LABEL_DTYPE
+from agri_strat.utils.splits.patch.patch_processor import PatchProcessor
 
 
 class ClassPixelCounts(PatchProcessor):

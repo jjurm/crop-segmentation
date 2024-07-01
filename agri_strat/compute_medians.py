@@ -4,24 +4,23 @@ This script computes the medians of the bands in the netCDF files and saves them
 for each subpatch of the netCDF files, and the subpatches (and the labels) are saved to disk as numpy arrays.
 """
 
+from multiprocessing import Pool, Manager
+
 import argparse
 import hashlib
 import itertools
-import os
-from functools import partial
-from multiprocessing import Pool, Manager
-from pathlib import Path
-
 import netCDF4
 import numpy as np
+import os
 import pandas as pd
-import xarray as xr
-from numpy.lib.stride_tricks import as_strided
-from tqdm import tqdm
-
 import wandb
-from utils.constants import BANDS, IMG_SIZE, REFERENCE_BAND, MEDIANS_DTYPE, LABEL_DTYPE
-from utils.medians_metadata import MediansMetadata
+import xarray as xr
+from agri_strat.utils.constants import BANDS, IMG_SIZE, REFERENCE_BAND, MEDIANS_DTYPE, LABEL_DTYPE
+from agri_strat.utils.medians_metadata import MediansMetadata
+from functools import partial
+from numpy.lib.stride_tricks import as_strided
+from pathlib import Path
+from tqdm import tqdm
 
 
 def parse_arguments():

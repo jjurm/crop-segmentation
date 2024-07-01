@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from utils.active_sampling.relevance_score.score_fn import ScoreFn
+from agri_strat.utils.active_sampling.relevance_score.score_fn import ScoreFn
 
 
 class RandomScoreFn(ScoreFn):
