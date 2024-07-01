@@ -17,7 +17,7 @@ from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, M
 
 from agri_strat.models.model_class import get_model_class
 from agri_strat.utils.active_sampling.active_sampling import ActiveSampler, get_active_sampling_relevancy_score_fn
-from agri_strat.utils.class_weights import ClassWeights
+from agri_strat.utils.class_weights_module import ClassWeights
 from agri_strat.utils.constants import IMG_SIZE
 from agri_strat.utils.custom_wandb_logger import CustomWandbLogger
 from agri_strat.utils.label_encoder import LabelEncoder

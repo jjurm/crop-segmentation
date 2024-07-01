@@ -12,7 +12,7 @@ from agri_strat.utils.active_sampling.relevance_score.loss_score_fn import IHOLo
 from agri_strat.utils.active_sampling.relevance_score.random import RandomScoreFn
 from agri_strat.utils.active_sampling.relevance_score.score_fn import ScoreFn, WeightedScoreFn
 from agri_strat.utils.active_sampling.relevance_score.uncertainty_margin import UncertaintyMarginScoreFn
-from agri_strat.utils.class_weights import ClassWeights
+from agri_strat.utils.class_weights_module import ClassWeights
 
 
 @functional_datapipe('unbatch_tensor')

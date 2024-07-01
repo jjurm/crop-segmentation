@@ -16,7 +16,7 @@ from agri_strat.utils.callbacks.batch_counter import BatchCounterCallback
 from agri_strat.utils.callbacks.custom_lr_monitor import CustomLearningRateMonitor
 from agri_strat.utils.callbacks.custom_model_checkpoint import CustomModelCheckpoint
 from agri_strat.utils.callbacks.print_stage import PrintStageCallback
-from agri_strat.utils.class_weights import ClassWeights
+from agri_strat.utils.class_weights_module import ClassWeights
 from agri_strat.utils.custom_progress_bar import CustomProgressBar
 from agri_strat.utils.custom_wandb_logger import CustomWandbLogger
 from agri_strat.utils.exception_tracker_callback import ExceptionTrackerCallback
