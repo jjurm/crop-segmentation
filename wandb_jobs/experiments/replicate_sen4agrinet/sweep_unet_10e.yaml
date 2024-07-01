@@ -1,6 +1,6 @@
 job: 'jjurm/agri-strat/train_test:sweep'
 method: grid
-name: exp-replicate-unet
+name: exp-replicate-unet-10e
 metric:
   goal: maximize
   name: val/f1w_parcel.max
@@ -23,12 +23,10 @@ parameters:
   split_artifact:
     values:
       - exp1_patches5000_strat_coco_split:latest
-      - s4a_naive_split:latest
-      - s4a_temporal2_split:latest
   bins_range:
     value: [4, 9]
   num_epochs:
-    value: 30
+    value: 10
   batch_size:
     value: 256
   physical_batch_size:
