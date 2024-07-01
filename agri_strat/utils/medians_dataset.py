@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import IterableDataset, get_worker_info
 
-from agri_strat.utils.constants import MEDIANS_DTYPE
-from agri_strat.utils.label_encoder import LabelEncoder
-from agri_strat.utils.medians_metadata import MediansMetadata
+from utils.constants import MEDIANS_DTYPE
+from utils.label_encoder import LabelEncoder
+from utils.medians_metadata import MediansMetadata
 
 # Divider for normalizing tiff data to [0-1] range
 NORMALIZATION_DIV = 10000

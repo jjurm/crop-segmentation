@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from agri_strat.models.utils import initialize_last_layer_bias
+from models.utils import initialize_last_layer_bias
 
 
 class DoubleConv(nn.Module):

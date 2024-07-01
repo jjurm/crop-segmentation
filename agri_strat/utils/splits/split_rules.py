@@ -4,7 +4,7 @@ import wandb
 import yaml
 from sklearn.model_selection import StratifiedShuffleSplit
 
-from agri_strat.utils.splits.stratified_continuous_split import get_features_for_stratifying, combine_features_for_stratifying
+from utils.splits.stratified_continuous_split import get_features_for_stratifying, combine_features_for_stratifying
 
 
 class SetMeOneTimeTarget:

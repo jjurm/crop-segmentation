@@ -3,7 +3,7 @@ from typing import Any, Dict
 import lightning as pl
 import wandb
 
-from agri_strat.utils.medians_datamodule import MediansDataModule
+from utils.medians_datamodule import MediansDataModule
 
 
 class BatchCounterCallback(pl.Callback):

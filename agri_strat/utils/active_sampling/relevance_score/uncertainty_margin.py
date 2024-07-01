@@ -1,6 +1,6 @@
 import torch
 
-from agri_strat.utils.active_sampling.relevance_score.loss_score_fn import AbstractLossScoreFn
+from utils.active_sampling.relevance_score.loss_score_fn import AbstractLossScoreFn
 
 
 class UncertaintyMarginScoreFn(AbstractLossScoreFn):

@@ -15,13 +15,13 @@ from torchmetrics import MeanMetric
 from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score, MulticlassConfusionMatrix, \
     MulticlassPrecision, MulticlassRecall
 
-from agri_strat.models.model_class import get_model_class
-from agri_strat.utils.active_sampling.active_sampling import ActiveSampler, get_active_sampling_relevancy_score_fn
-from agri_strat.utils.class_weights_module import ClassWeights
-from agri_strat.utils.constants import IMG_SIZE
-from agri_strat.utils.custom_wandb_logger import CustomWandbLogger
-from agri_strat.utils.label_encoder import LabelEncoder
-from agri_strat.utils.medians_metadata import MediansMetadata
+from models.model_class import get_model_class
+from utils.active_sampling.active_sampling import ActiveSampler, get_active_sampling_relevancy_score_fn
+from utils.class_weights_module import ClassWeights
+from utils.constants import IMG_SIZE
+from utils.custom_wandb_logger import CustomWandbLogger
+from utils.label_encoder import LabelEncoder
+from utils.medians_metadata import MediansMetadata
 
 NUM_VALIDATION_PATCH_EXAMPLES = 6
 NUM_VALIDATION_PATCH_EXAMPLES_TEST = 18

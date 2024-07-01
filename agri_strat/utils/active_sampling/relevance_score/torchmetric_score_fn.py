@@ -4,7 +4,7 @@ from typing import Callable
 import torch
 from torch import nn
 
-from agri_strat.score_fn import ScoreFn
+from score_fn import ScoreFn
 
 
 class TorchMetricScoreFn(ScoreFn):

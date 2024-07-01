@@ -2,8 +2,8 @@ from typing import Type
 
 from torch import nn
 
-from agri_strat.models.convstar import ConvSTAR
-from agri_strat.models.unet import UNet
+from models.convstar import ConvSTAR
+from models.unet import UNet
 
 
 def get_model_class(model) -> Type[nn.Module]:

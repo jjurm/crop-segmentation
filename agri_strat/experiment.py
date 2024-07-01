@@ -11,17 +11,17 @@ import lightning.pytorch as pl
 import os
 import torch
 import wandb
-from agri_strat.models.base import BaseModelModule
-from agri_strat.utils.callbacks.batch_counter import BatchCounterCallback
-from agri_strat.utils.callbacks.custom_lr_monitor import CustomLearningRateMonitor
-from agri_strat.utils.callbacks.custom_model_checkpoint import CustomModelCheckpoint
-from agri_strat.utils.callbacks.print_stage import PrintStageCallback
-from agri_strat.utils.class_weights_module import ClassWeights
-from agri_strat.utils.custom_progress_bar import CustomProgressBar
-from agri_strat.utils.custom_wandb_logger import CustomWandbLogger
-from agri_strat.utils.exception_tracker_callback import ExceptionTrackerCallback
-from agri_strat.utils.label_encoder import LabelEncoder
-from agri_strat.utils.medians_datamodule import MediansDataModule
+from models.base import BaseModelModule
+from utils.callbacks.batch_counter import BatchCounterCallback
+from utils.callbacks.custom_lr_monitor import CustomLearningRateMonitor
+from utils.callbacks.custom_model_checkpoint import CustomModelCheckpoint
+from utils.callbacks.print_stage import PrintStageCallback
+from utils.class_weights_module import ClassWeights
+from utils.custom_progress_bar import CustomProgressBar
+from utils.custom_wandb_logger import CustomWandbLogger
+from utils.exception_tracker_callback import ExceptionTrackerCallback
+from utils.label_encoder import LabelEncoder
+from utils.medians_datamodule import MediansDataModule
 from lightning import seed_everything
 from math import ceil
 from pathlib import Path

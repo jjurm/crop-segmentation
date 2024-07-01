@@ -4,8 +4,8 @@ import torch
 import wandb
 from torch import nn
 
-from agri_strat.models.model_class import get_model_class
-from agri_strat.utils.active_sampling.relevance_score.score_fn import ScoreFn
+from models.model_class import get_model_class
+from utils.active_sampling.relevance_score.score_fn import ScoreFn
 
 
 class AbstractLossScoreFn(ScoreFn):

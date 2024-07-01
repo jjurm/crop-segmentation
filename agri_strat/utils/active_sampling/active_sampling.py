@@ -8,11 +8,11 @@ from torch.utils.data import functional_datapipe, IterDataPipe, DataChunk
 from torch.utils.data.datapipes.iter.grouping import UnBatcherIterDataPipe
 from torchdata.datapipes.iter import IterableWrapper
 
-from agri_strat.utils.active_sampling.relevance_score.loss_score_fn import IHOLossScoreFn, LossScoreFn
-from agri_strat.utils.active_sampling.relevance_score.random import RandomScoreFn
-from agri_strat.utils.active_sampling.relevance_score.score_fn import ScoreFn, WeightedScoreFn
-from agri_strat.utils.active_sampling.relevance_score.uncertainty_margin import UncertaintyMarginScoreFn
-from agri_strat.utils.class_weights_module import ClassWeights
+from utils.active_sampling.relevance_score.loss_score_fn import IHOLossScoreFn, LossScoreFn
+from utils.active_sampling.relevance_score.random import RandomScoreFn
+from utils.active_sampling.relevance_score.score_fn import ScoreFn, WeightedScoreFn
+from utils.active_sampling.relevance_score.uncertainty_margin import UncertaintyMarginScoreFn
+from utils.class_weights_module import ClassWeights
 
 
 @functional_datapipe('unbatch_tensor')

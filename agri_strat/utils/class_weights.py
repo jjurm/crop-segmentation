@@ -1,5 +1,5 @@
 import numpy as np
-from agri_strat.utils.label_encoder import LabelEncoder
+from .label_encoder import LabelEncoder
 
 
 def _calculate_class_weights(relative_class_frequencies):

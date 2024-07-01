@@ -1,11 +1,13 @@
 import argparse
-import geopandas as gpd
 import os
-import tqdm
 import urllib.request
-import wandb
 from pathlib import Path
+
+import geopandas as gpd
+import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
+
+import wandb
 
 
 def parse_args():

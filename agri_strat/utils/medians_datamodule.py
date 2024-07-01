@@ -10,9 +10,9 @@ from lightning.pytorch.trainer.states import TrainerFn
 from torch.utils.data import DataLoader
 from torchdata.datapipes.iter import IterableWrapper
 
-from agri_strat.utils.label_encoder import LabelEncoder
-from agri_strat.utils.medians_dataset import MediansDataset
-from agri_strat.utils.medians_metadata import MediansMetadata
+from utils.label_encoder import LabelEncoder
+from utils.medians_dataset import MediansDataset
+from utils.medians_metadata import MediansMetadata
 
 
 # TODO consider using the following function to have
