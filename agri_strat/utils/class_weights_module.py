@@ -1,7 +1,7 @@
 import torch
 import wandb
-from agri_strat.utils.class_weights import _calculate_class_weights, _calculate_class_counts_frequencies
-from agri_strat.utils.label_encoder import LabelEncoder
+from utils.class_weights import _calculate_class_weights, _calculate_class_counts_frequencies
+from utils.label_encoder import LabelEncoder
 
 
 class ClassWeights:
