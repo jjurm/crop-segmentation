@@ -17,7 +17,7 @@ def _calculate_class_weights(relative_class_frequencies):
 def _calculate_class_counts_frequencies(class_counts: dict[int, int], label_encoder: LabelEncoder, parcel_loss: bool):
     mapped_counts = np.array([
         0 if i == 0 and parcel_loss else
-        sum(class_counts[dataset_label] for dataset_label in dataset_labels)
+        sum(class_counts[dataset_label] for dataset_label in dataset_labels if dataset_label in class_counts)
         for i, dataset_labels in label_encoder.entries
     ])
     total_count = np.sum(mapped_counts)
