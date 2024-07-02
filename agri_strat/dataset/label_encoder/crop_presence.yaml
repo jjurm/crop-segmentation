@@ -167,6 +167,7 @@ labels:
       - 998  # Unknown crops
   - name: Non-crops
     id:
+      - 0
       - 970  # Other Classes
       - 971  # Artificial Surfaces
       - 972  # Forest
