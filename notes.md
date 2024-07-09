@@ -166,6 +166,8 @@ wandb job create -p agri-strat -e jjurm --name split_data --entry-point agri_str
 ```
 ```bash
 wandb job create -p agri-strat -e jjurm --name experiment --entry-point agri_strat/experiment.py --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
+wandb job create -p agri-strat -e jjurm --name train_test --entry-point "agri_strat/experiment.py --job_type train_test" --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
+wandb job create -p agri-strat -e jjurm --name test --entry-point "agri_strat/experiment.py --job_type test" --git-hash $(git rev-parse HEAD) --runtime 3.10 git https://github.com/jjurm/master-thesis-code.git
 ```
 
 launch the job
