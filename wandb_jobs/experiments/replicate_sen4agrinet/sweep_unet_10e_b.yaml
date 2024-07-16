@@ -1,0 +1,58 @@
+job: 'jjurm/agri-strat/train_test:sweep'
+method: grid
+name: exp-replicate-unet-10e-b
+metric:
+  goal: maximize
+  name: val/f1w_parcel.max
+parameters:
+  seed:
+    values:
+      - 0
+      - 1
+      - 2
+  model:
+    value: "unet"
+  parcel_loss:
+    value: true
+  weighted_loss:
+    value: true
+  class_weights_weight:
+    value: 0.1
+  medians_artifact:
+    value: "1MS_B02B03B04B08_61x61:latest"
+  split_artifact:
+    values:
+      - s4a_naive_split:latest
+      - s4a_temporal2_split:latest
+  bins_range:
+    value: [4, 9]
+  num_epochs:
+    value: 10
+  batch_size:
+    value: 256
+  physical_batch_size:
+    value: 128
+  learning_rate:
+    value: 0.01
+  requires_norm:
+    value: true
+  num_workers:
+    value: 8
+  deterministic:
+    value: true
+  shuffle_buffer_num_patches:
+    value: 500
+  skip_empty_subpatches:
+    value: true
+  shuffle_subpatches_within_patch:
+    value: false
+  label_encoder_artifact:
+    value: "s4a_labels:latest"
+  block_size:
+    value: 1
+  n_batches_per_block:
+    value: 1
+  active_sampling_relevancy_score:
+    value: ["none"]
+scheduler:
+  num_workers: 2
