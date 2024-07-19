@@ -106,6 +106,8 @@ def parse_arguments():
     parser.add_argument('--deterministic', action='store_true', default=False, required=False,
                         help='Enforce reproducible results (except functions without a deterministic implementation). '
                              'Default False')
+    parser.add_argument('--precision', type=str, default='32-true', required=False,
+                        help='Precision to use for training. Default 32-true')
 
     parser = parser_with_groups.add_argument_group('hardware')
     parser.add_argument('--num_gpus', type=int, default=1, required=False,
@@ -312,7 +314,7 @@ def main():
             num_nodes=run.config["num_nodes"],
             max_epochs=ceil(run.config["num_epochs"] * run.config["block_size"]),
             check_val_every_n_epoch=round(run.config["check_val_every_n_epoch"] * run.config["block_size"]),
-            precision='32-true',
+            precision=run.config["precision"],
             callbacks=callbacks,
             logger=logger,
             deterministic="warn" if run.config["deterministic"] else None,
