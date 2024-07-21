@@ -493,7 +493,7 @@ class BaseModelModule(pl.LightningModule):
 
         # Validation metrics will be logged only in on_train_epoch_end together with the training metrics
         metric_prefix = self.trainer.state.stage.dataloader_prefix
-        self.val_metrics = {
+        val_metrics = {
             f"{metric_prefix}/loss_nll_parcel": self.loss_nll_val.compute().cpu().item(),
             f"{metric_prefix}/acc_parcel": self.metric_acc_parcel.compute().cpu().item(),
             f"{metric_prefix}/f1w_parcel": self.metric_f1w_parcel.compute().cpu().item(),
@@ -504,7 +504,7 @@ class BaseModelModule(pl.LightningModule):
             f"{metric_prefix}/confusion_matrix": wandb_cm,
         }
         if not self.parcel_loss:
-            self.val_metrics |= {
+            val_metrics |= {
                 f"{metric_prefix}/acc": self.metric_acc.compute().cpu().item(),
                 f"{metric_prefix}/f1w": self.metric_f1w.compute().cpu().item(),
                 f"{metric_prefix}/f1ma": self.metric_f1ma.compute().cpu().item(),
@@ -513,17 +513,20 @@ class BaseModelModule(pl.LightningModule):
         if self._should_eval_more():
             class_scores_df = self._compute_class_scores_table(confusion_matrix_cpu)
             patch_scores_df = self._compute_per_patch_scores()
-            self.val_metrics |= {
+            val_metrics |= {
                 f"{metric_prefix}/class_scores": wandb.Table(dataframe=class_scores_df),
                 f"{metric_prefix}/patch_scores": wandb.Table(dataframe=patch_scores_df),
             }
 
             if not self.trainer.sanity_checking:
                 examples_table, images = self._get_preview_table_and_samples()
-                self.val_metrics |= {
+                val_metrics |= {
                     f"{metric_prefix}/examples": images,
                     f"{metric_prefix}/examples_table": examples_table,
                 }
+
+        if not self.trainer.sanity_checking:
+            self.val_metrics = val_metrics
 
         if self.trainer.training:
             self._update_learning_rate()
@@ -533,7 +536,7 @@ class BaseModelModule(pl.LightningModule):
         self.validation_examples = None
         self.validation_patch_scores = None
 
-        # Log metrics
+        # Log metrics (if training, they will be logged in on_train_epoch_end)
         if self.trainer.state.fn in [TrainerFn.VALIDATING, TrainerFn.TESTING]:
             self.logger.log_metrics(self.val_metrics)
             self.logger.log_now(dry_run=self.trainer.sanity_checking)
