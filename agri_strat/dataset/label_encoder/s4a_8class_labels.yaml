@@ -1,0 +1,20 @@
+# $schema: ../../schema/label_encoder.schema.json
+labels:
+  - name: "0"
+    id: 0
+  - name: Maize
+    id: 120
+  - name: Sorghum
+    id: 140
+  - name: Barley
+    id: 150
+  - name: Rye
+    id: 160
+  - name: Oats
+    id: 170
+  - name: Grapes
+    id: 330
+  - name: Rapeseed
+    id: 435
+  - name: Peas
+    id: 770
