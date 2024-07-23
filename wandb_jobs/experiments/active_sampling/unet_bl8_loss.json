@@ -1,0 +1,34 @@
+{
+  "overrides": {
+    "args": [
+      "--tags",
+      "active-sampling"
+    ],
+    "run_config": {
+      "precision": "bf16-mixed",
+      "model": "unet",
+      "parcel_loss": true,
+      "weighted_loss": false,
+      "class_weights_weight": 0.1,
+      "label_encoder_artifact": "s4a_labels:latest",
+      "medians_artifact": "1MS_B02B03B04B08_61x61:latest",
+      "split_artifact": "s4a_naive_split:latest",
+      "bins_range": [4, 9],
+      "num_epochs": 10,
+      "eval_every_n_val_epoch": 0,
+      "batch_size": 128,
+      "physical_batch_size": 128,
+      "requires_norm": true,
+      "num_workers": 8,
+      "deterministic": true,
+      "seed": 0,
+      "shuffle_buffer_num_patches": 500,
+      "skip_empty_subpatches": true,
+      "shuffle_subpatches_within_patch": false,
+      "n_batches_per_block": 1,
+      "block_size": 8,
+      "learning_rate": 0.001,
+      "active_sampling_relevancy_score": "loss"
+    }
+  }
+}

@@ -1,6 +1,6 @@
 job: 'jjurm/agri-strat/train_test:sweep'
 method: grid
-name: exp-replicate-convstar-temporal-no-wheat
+name: exp-replicate-unet-temporal-8class
 metric:
   goal: maximize
   name: val/f1w_parcel.max
@@ -11,7 +11,7 @@ parameters:
       - 1
       - 2
   model:
-    value: "convstar"
+    value: "unet"
   parcel_loss:
     value: true
   weighted_loss:
@@ -26,13 +26,13 @@ parameters:
   bins_range:
     value: [4, 9]
   num_epochs:
-    value: 10
+    value: 30
   batch_size:
-    value: 32
+    value: 256
   physical_batch_size:
-    value: 32
+    value: 128
   learning_rate:
-    value: 0.001
+    value: 0.01
   requires_norm:
     value: true
   num_workers:
@@ -46,7 +46,7 @@ parameters:
   shuffle_subpatches_within_patch:
     value: false
   label_encoder_artifact:
-    value: "s4a_no_wheat_labels:latest"
+    value: "s4a_8class_labels:latest"
   block_size:
     value: 1
   n_batches_per_block:
