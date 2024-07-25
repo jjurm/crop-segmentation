@@ -22,7 +22,10 @@ parameters:
   label_encoder_artifact:
     value: s4a_labels:latest
   learning_rate:
-    value: 0.0001
+    values:
+    - 0.003
+    - 0.001
+    - 0.0003
   medians_artifact:
     value: 1MS_B02B03B04B08_61x61:latest
   model:
