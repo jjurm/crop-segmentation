@@ -1,0 +1,58 @@
+job: jjurm/agri-strat/train_test:sweep
+method: grid
+metric:
+  goal: maximize
+  name: val/f1w_parcel.max
+name: exp-active-sampling-unet-bl8-random
+parameters:
+  active_sampling_relevancy_score:
+    value: random
+  batch_size:
+    value: 128
+  bins_range:
+    value:
+    - 4
+    - 9
+  block_size:
+    value: 8
+  class_weights_weight:
+    value: 0.1
+  deterministic:
+    value: true
+  label_encoder_artifact:
+    value: s4a_labels:latest
+  learning_rate:
+    value: 0.01
+  medians_artifact:
+    value: 1MS_B02B03B04B08_61x61:latest
+  model:
+    value: unet
+  n_batches_per_block:
+    value: 1
+  num_epochs:
+    value: 10
+  num_workers:
+    value: 8
+  parcel_loss:
+    value: true
+  physical_batch_size:
+    value: 128
+  precision:
+    value: bf16-mixed
+  requires_norm:
+    value: true
+  seed:
+    value: 0
+  shuffle_buffer_num_patches:
+    value: 500
+  shuffle_subpatches_within_patch:
+    value: false
+  skip_empty_subpatches:
+    value: true
+  split_artifact:
+    values:
+    - s4a_naive_split:latest
+  weighted_loss:
+    value: true
+scheduler:
+  num_workers: 2
