@@ -192,6 +192,8 @@ Similar to a single run, a yaml file can describe a sweep of runs to be launched
 wandb launch-sweep --queue kp --entity jjurm --project agri-strat wandb_jobs/experiments/replicate_sen4agrinet/sweep_unet.yaml
 ```
 
+The `wandb_jobs/experiments` directory contains sweep configuration files to reproduce the experiments from the thesis.
+
 
 ## Installing the `agri_strat` Python package
 
