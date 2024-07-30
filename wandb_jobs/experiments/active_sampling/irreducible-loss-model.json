@@ -1,6 +1,8 @@
 {
   "overrides": {
     "args": [
+      "--tags",
+      "irreducible-loss-model"
     ],
     "run_config": {
       "model": "unet",
@@ -9,10 +11,11 @@
       "class_weights_weight": 0.1,
       "label_encoder_artifact": "s4a_labels:latest",
       "medians_artifact": "1MS_B02B03B04B08_61x61:latest",
-      "split_artifact": "s4a_naive_split:latest",
+      "split_artifact": "s4a_naive_split_swap:latest",
       "bins_range": [4, 9],
-      "num_epochs": 30,
+      "num_epochs": 8,
       "batch_size": 256,
+      "physical_batch_size": 128,
       "learning_rate": 1e-2,
       "requires_norm": true,
       "num_workers": 8,
@@ -20,7 +23,8 @@
       "seed": 0,
       "shuffle_buffer_num_patches": 500,
       "skip_empty_subpatches": true,
-      "shuffle_subpatches_within_patch": false
+      "shuffle_subpatches_within_patch": false,
+      "limit_val_batches": 0.05
     }
   }
 }

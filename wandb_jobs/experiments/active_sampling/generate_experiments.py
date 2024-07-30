@@ -45,7 +45,7 @@ experiment_overrides = {
     "unet_bl8_rho": {
         "block_size": 8,
         "active_sampling_relevancy_score": "rho-loss-model-brisk-lion-807:best",
-        "learning_rate": [0.003, 0.001, 0.0003],
+        "learning_rate": [0.001, 0.0003],
     },
 }
 

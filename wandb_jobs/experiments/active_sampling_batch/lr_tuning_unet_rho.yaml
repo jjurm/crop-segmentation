@@ -1,15 +1,14 @@
-job: 'jjurm/agri-strat/experiment:latest'
+job: 'jjurm/agri-strat/experiment:sweep'
 method: grid
-name: active-sampling-1
+name: exp-active-sampling-batch-unet-rho
 metric:
   goal: maximize
   name: val/f1w_parcel.max
 parameters:
+  precision:
+    value: "bf16-mixed"
   seed:
-    values:
-      - 0
-      - 1
-      - 2
+    value: 0
   model:
     value: "unet"
   parcel_loss:
@@ -21,7 +20,8 @@ parameters:
   medians_artifact:
     value: "1MS_B02B03B04B08_61x61:latest"
   split_artifact:
-    value: "s4a_naive_split:latest"
+    values:
+      - s4a_naive_20p_split:latest
   bins_range:
     value: [4, 9]
   num_epochs:
@@ -30,12 +30,16 @@ parameters:
     values:
       - 256
       - 128
+      - 64
   physical_batch_size:
-    value: 64
+    value: 128
   learning_rate:
     values:
-      - 0.01
-      - 0.003
+#      - 0.003
+#      - 0.001
+      - 0.0003
+#      - 0.0001
+#      - 0.00003
   requires_norm:
     value: true
   num_workers:
@@ -50,9 +54,17 @@ parameters:
     value: false
   label_encoder_artifact:
     value: "s4a_labels:latest"
-  irreducible_loss_model_artifact:
+  block_size:
     values:
-      - ~
-      - "model-good-surf-412:latest"
+      - 2
+      - 8
+  n_batches_per_block:
+    value: 1
+  active_sampling_relevancy_score:
+    values:
+#      - "uncertainty-margin"
+#      - "loss"
+      - - "loss"
+        - "-1.0*iho-loss-model-brisk-lion-807:best"
 scheduler:
-  num_workers: 2
+  num_workers: 4

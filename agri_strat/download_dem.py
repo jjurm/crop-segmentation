@@ -11,7 +11,7 @@ import wandb
 
 
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(epilog="Requires the EARTHDATA_TOKEN environment variable, see https://urs.earthdata.nasa.gov/documentation/for_users/user_token.")
     # One of --split_artifact and __xy_lims is required
     parser.add_argument("--split_artifact", type=str, required=False, help="Artifact of the type 'split'.")
     parser.add_argument("--xy_lims", type=float, nargs=4, required=False,

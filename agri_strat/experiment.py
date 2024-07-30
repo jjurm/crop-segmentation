@@ -3,15 +3,15 @@
 __author__ = "Juraj Micko"
 __license__ = "MIT License"
 
-if __name__ == '__main__':
-    print("Importing modules...")
-
 import argparse
 import lightning.pytorch as pl
 import os
 import torch
 import wandb
+from lightning import seed_everything
+from math import ceil
 from models.base import BaseModelModule
+from pathlib import Path
 from utils.callbacks.batch_counter import BatchCounterCallback
 from utils.callbacks.custom_lr_monitor import CustomLearningRateMonitor
 from utils.callbacks.custom_model_checkpoint import CustomModelCheckpoint
@@ -22,9 +22,6 @@ from utils.custom_wandb_logger import CustomWandbLogger
 from utils.exception_tracker_callback import ExceptionTrackerCallback
 from utils.label_encoder import LabelEncoder
 from utils.medians_datamodule import MediansDataModule
-from lightning import seed_everything
-from math import ceil
-from pathlib import Path
 
 
 def parse_arguments():
