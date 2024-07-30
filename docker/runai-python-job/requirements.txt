@@ -34,3 +34,5 @@ torchdata
 pyshp
 contextily
 tol-colors
+openpyxl
+brokenaxes
